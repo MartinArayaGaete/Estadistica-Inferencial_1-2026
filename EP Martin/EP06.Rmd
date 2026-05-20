@@ -1,0 +1,400 @@
+---
+title: "EP06"
+author: "Equipo 4"
+date: "2026-05-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Cargamos las librerías que usaremos para manipulación, gráficos y pruebas estadísticas.
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggpubr)
+library(ez)
+library(forcats)
+```
+
+## Pregunta 1
+
+En este momento, los investigadores buscan determinar si existen diferencias en el tiempo que tardan los usuarios en formular consultas para problemas con diferente nivel de dificultad en el área de Biología.
+
+## 1. Obtención y preparación de los datos
+
+```{r datos}
+# Leer los datos desde el archivo entregado.
+datos <- read_csv("EP06 Datos.csv", locale = locale(encoding = "UTF-8"))
+
+# Filtrar solo el área de Biología y preparar las variables.
+datos <- datos %>%
+  filter(area == "Biología") %>%
+  mutate(
+    area = factor(area),
+    dificultad = factor(
+      dificultad,
+      levels = c("Baja", "Media", "Alta"),
+      ordered = TRUE
+    ),
+    id = factor(id)
+  ) %>%
+  droplevels()
+
+# Revisar las primeras filas.
+head(datos)
+```
+
+## 2. Familiarización con los datos
+
+La variable dependiente es `tiempo`, medida en segundos. La variable independiente intra-sujeto es `dificultad`, con tres niveles: Baja, Media y Alta. Como cada participante aparece en los tres niveles de dificultad, se trata de un diseño de medidas repetidas o muestras correlacionadas.
+
+```{r resumen_datos}
+# Resumen general del diseño.
+resumen_diseno <- datos %>%
+  summarise(
+    observaciones = n(),
+    participantes = n_distinct(id),
+    areas = n_distinct(area),
+    dificultades = n_distinct(dificultad),
+    datos_perdidos_tiempo = sum(is.na(tiempo))
+  )
+
+knitr::kable(resumen_diseno)
+
+# Cantidad de observaciones por nivel de dificultad.
+conteo_dificultad <- datos %>%
+  count(dificultad, name = "n_observaciones")
+
+knitr::kable(conteo_dificultad)
+
+# Verificar cuántas mediciones tiene cada participante.
+conteo_por_participante <- datos %>%
+  count(id, name = "n_mediciones") %>%
+  count(n_mediciones, name = "cantidad_participantes")
+
+knitr::kable(conteo_por_participante)
+
+# Verificar que no existan combinaciones duplicadas de id y dificultad.
+duplicados <- datos %>%
+  count(id, dificultad) %>%
+  filter(n != 1)
+
+knitr::kable(duplicados)
+```
+
+Si la tabla de duplicados aparece vacía, significa que cada participante tiene una sola medición en cada nivel de dificultad. Además, si todos los participantes tienen tres mediciones, se confirma que el diseño está balanceado para aplicar ANOVA de medidas repetidas.
+
+```{r descriptivos}
+# Estadísticos descriptivos por dificultad.
+descriptivos <- datos %>%
+  group_by(dificultad) %>%
+  summarise(
+    n = n(),
+    media = mean(tiempo, na.rm = TRUE),
+    desviacion_estandar = sd(tiempo, na.rm = TRUE),
+    mediana = median(tiempo, na.rm = TRUE),
+    minimo = min(tiempo, na.rm = TRUE),
+    maximo = max(tiempo, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+knitr::kable(descriptivos, digits = 3)
+```
+
+```{r grafico_descriptivo}
+ggplot(datos, aes(x = dificultad, y = tiempo)) +
+  geom_boxplot() +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  labs(
+    title = "Tiempo de formulación de consultas según dificultad",
+    x = "Nivel de dificultad",
+    y = "Tiempo en segundos"
+  )
+```
+
+## 3. Hipótesis
+
+Como se comparan tres mediciones relacionadas de los mismos participantes, se utiliza un ANOVA de medidas repetidas.
+
+Hipótesis nula:
+
+\[
+H_0: \mu_{Baja} = \mu_{Media} = \mu_{Alta}
+\]
+
+En promedio, no existen diferencias en el tiempo que tardan los usuarios en formular consultas entre los niveles de dificultad Baja, Media y Alta en el área de Biología.
+
+Hipótesis alternativa:
+
+\[
+H_1: \text{al menos una media de tiempo es diferente entre los niveles de dificultad.}
+\]
+
+Es decir, el tiempo promedio de formulación de consultas es diferente para al menos un nivel de dificultad en el área de Biología.
+
+Usaremos un nivel de significación de:
+
+```{r alpha}
+alpha <- 0.05
+alpha
+```
+
+## 4. Revisión de condiciones para usar ANOVA de medidas repetidas
+
+Para aplicar ANOVA de medidas repetidas se revisan las siguientes condiciones:
+
+1. La variable dependiente debe estar medida en una escala cuantitativa.
+2. El factor intra-sujeto debe tener tres o más niveles relacionados.
+3. Las observaciones entre participantes distintos deben ser independientes.
+4. Las diferencias entre niveles deben aproximarse a la normalidad.
+5. Debe cumplirse la condición de esfericidad, o aplicar una corrección si no se cumple.
+
+En este caso, `tiempo` es una variable cuantitativa medida en segundos. Además, cada participante fue medido en los tres niveles de `dificultad`, por lo que corresponde usar un procedimiento para muestras correlacionadas. La independencia no se exige entre las mediciones de un mismo participante, porque justamente son medidas repetidas; lo que se asume es independencia entre participantes distintos.
+
+### 4.1 Normalidad
+
+Primero revisamos gráficamente la distribución del tiempo por nivel de dificultad.
+
+```{r normalidad_graficos}
+g_qq <- ggqqplot(datos, x = "tiempo", facet.by = "dificultad")
+print(g_qq)
+```
+
+También aplicamos la prueba de Shapiro-Wilk por nivel de dificultad como revisión auxiliar.
+
+```{r normalidad_por_dificultad}
+normalidad_por_dificultad <- datos %>%
+  group_by(dificultad) %>%
+  summarise(
+    W = shapiro.test(tiempo)$statistic,
+    p_value = shapiro.test(tiempo)$p.value,
+    decision = if_else(p_value > alpha, "No se rechaza normalidad", "Se rechaza normalidad"),
+    .groups = "drop"
+  )
+
+knitr::kable(normalidad_por_dificultad, digits = 4)
+```
+
+Sin embargo, como el diseño es de medidas repetidas, también es importante revisar la normalidad de las diferencias entre pares de niveles de dificultad. Para esto transformamos los datos a formato ancho, dejando una columna para Baja, una para Media y una para Alta.
+
+```{r datos_wide}
+datos_wide <- datos %>%
+  select(id, dificultad, tiempo) %>%
+  pivot_wider(names_from = dificultad, values_from = tiempo)
+
+head(datos_wide)
+```
+
+```{r normalidad_diferencias}
+normalidad_diferencias <- tibble(
+  diferencia = c("Baja - Media", "Baja - Alta", "Media - Alta"),
+  W = c(
+    shapiro.test(datos_wide$Baja - datos_wide$Media)$statistic,
+    shapiro.test(datos_wide$Baja - datos_wide$Alta)$statistic,
+    shapiro.test(datos_wide$Media - datos_wide$Alta)$statistic
+  ),
+  p_value = c(
+    shapiro.test(datos_wide$Baja - datos_wide$Media)$p.value,
+    shapiro.test(datos_wide$Baja - datos_wide$Alta)$p.value,
+    shapiro.test(datos_wide$Media - datos_wide$Alta)$p.value
+  )
+) %>%
+  mutate(
+    decision = if_else(p_value > alpha, "No se rechaza normalidad", "Se rechaza normalidad")
+  )
+
+knitr::kable(normalidad_diferencias, digits = 4)
+```
+
+Si los valores p de las diferencias son mayores que \(\alpha = 0.05\), no se rechaza la normalidad de las diferencias. Esta revisión es especialmente importante porque las observaciones están pareadas por participante.
+
+### 4.2 Esfericidad
+
+La esfericidad se revisa mediante la prueba de Mauchly, que aparece dentro del resultado de `ezANOVA`.
+
+```{r anova_ez}
+# ANOVA de medidas repetidas.
+prueba_ez <- ezANOVA(
+  data = datos,
+  dv = tiempo,
+  wid = id,
+  within = dificultad,
+  type = 3,
+  detailed = TRUE,
+  return_aov = TRUE
+)
+
+prueba_ez
+```
+
+```{r esfericidad}
+# Tabla específica de Mauchly para revisar esfericidad.
+prueba_ez$`Mauchly's Test for Sphericity`
+
+# Correcciones disponibles si no se cumpliera esfericidad.
+prueba_ez$`Sphericity Corrections`
+```
+
+La hipótesis nula de la prueba de Mauchly indica que se cumple la esfericidad. Por lo tanto, si el valor p de Mauchly es mayor que 0.05, no se rechaza la esfericidad y se puede interpretar el ANOVA sin correcciones. Si el valor p fuera menor que 0.05, correspondería interpretar una corrección como Greenhouse-Geisser.
+
+## 5. Prueba ANOVA ómnibus
+
+La prueba ANOVA ómnibus permite evaluar si existe una diferencia global entre los promedios de tiempo de los tres niveles de dificultad.
+
+```{r tabla_anova}
+tabla_anova <- prueba_ez$ANOVA
+knitr::kable(tabla_anova, digits = 4)
+```
+
+Según el resultado del ANOVA de medidas repetidas, si el valor p asociado al factor `dificultad` es menor que \(\alpha = 0.05\), se rechaza la hipótesis nula. En ese caso, se concluye que existen diferencias significativas en el tiempo promedio de formulación de consultas entre al menos dos niveles de dificultad en el área de Biología.
+
+En estos datos, el resultado principal es:
+
+\[
+F(2,398)=59.264,\ p<0.001
+\]
+
+Por lo tanto, se rechaza la hipótesis nula. Existe evidencia estadísticamente significativa para afirmar que el nivel de dificultad influye en el tiempo que tardan los usuarios en formular consultas en el área de Biología.
+
+El valor de `ges` entregado por `ezANOVA` corresponde al eta cuadrado generalizado. En este caso, el tamaño del efecto es aproximadamente:
+
+\[
+\eta_G^2 = 0.162
+\]
+
+Esto sugiere que el efecto de la dificultad sobre el tiempo de formulación de consultas es relevante.
+
+## 6. Análisis post-hoc
+
+Como la prueba ómnibus resultó significativa, corresponde aplicar un análisis post-hoc para identificar entre qué niveles de dificultad se encuentran las diferencias. Dado que las mediciones son pareadas, se aplican pruebas t para muestras pareadas con ajuste de Holm para controlar el error por comparaciones múltiples.
+
+Para evitar errores por el orden de las filas, las comparaciones se realizan usando `datos_wide`, donde cada fila corresponde a un participante y cada columna a un nivel de dificultad.
+
+```{r posthoc}
+comparar_pareado <- function(variable_1, variable_2, nombre_comparacion) {
+  prueba <- t.test(
+    datos_wide[[variable_1]],
+    datos_wide[[variable_2]],
+    paired = TRUE
+  )
+  
+  tibble(
+    comparacion = nombre_comparacion,
+    media_1 = mean(datos_wide[[variable_1]], na.rm = TRUE),
+    media_2 = mean(datos_wide[[variable_2]], na.rm = TRUE),
+    diferencia_media = mean(datos_wide[[variable_1]] - datos_wide[[variable_2]], na.rm = TRUE),
+    t = unname(prueba$statistic),
+    gl = unname(prueba$parameter),
+    p_value = prueba$p.value
+  )
+}
+
+post_hoc <- bind_rows(
+  comparar_pareado("Baja", "Media", "Baja - Media"),
+  comparar_pareado("Baja", "Alta", "Baja - Alta"),
+  comparar_pareado("Media", "Alta", "Media - Alta")
+) %>%
+  mutate(
+    p_ajustado_holm = p.adjust(p_value, method = "holm"),
+    decision = if_else(p_ajustado_holm < alpha, "Diferencia significativa", "No significativa")
+  )
+
+knitr::kable(post_hoc, digits = 4)
+```
+
+El análisis post-hoc permite determinar qué pares de dificultad presentan diferencias significativas. Si los valores p ajustados por Holm son menores que 0.05, se concluye que esos pares difieren significativamente en sus tiempos promedio.
+
+En estos datos, las comparaciones entre Baja-Media, Baja-Alta y Media-Alta son significativas. Por lo tanto, los tres niveles de dificultad presentan diferencias entre sí.
+
+## 7. Respuesta final a la pregunta
+
+En el área de Biología sí existen diferencias significativas en el tiempo que tardan los usuarios en formular consultas según el nivel de dificultad del problema. El ANOVA de medidas repetidas mostró un efecto significativo de la dificultad sobre el tiempo, \(F(2,398)=59.264,\ p<0.001\), por lo que se rechaza la hipótesis nula.
+
+El análisis post-hoc mediante pruebas t pareadas con ajuste de Holm indicó diferencias significativas entre todos los pares de dificultad: Baja-Media, Baja-Alta y Media-Alta. En términos descriptivos, la dificultad Alta presentó el mayor tiempo promedio, seguida por Baja y luego Media. Por ello, se concluye que la dificultad influye en el tiempo de formulación de consultas, aunque la relación no es estrictamente creciente desde Baja hacia Media y Alta, ya que el nivel Media presentó un promedio menor que el nivel Baja.
+
+
+## Problema 2: Propongan una pregunta de investigación relacionada a los diferentes motores de bases de datos relacionales que necesite ser analizado por medio de un procedimiento ANOVA para muestras correlacionadas con un factor que tenga entre 4 y 6 niveles. Luego invente una población para cada grupo con 5.000 datos, asegurando que cumpla las suposiciones de esta prueba.
+
+### Para usar un ANOVA de medidas repetidas, el "sujeto" o "bloque" debe ser el mismo evaluado bajo diferentes condiciones. En nuestro dominio, el bloque es la Consulta SQL (Query) y las condiciones son los Motores de Bases de Datos.
+
+#### ¿Existen diferencias estadísticamente significativas en el tiempo medio de ejecución al procesar el mismo conjunto de 5.000 consultas analíticas complejas en 5 motores de bases de datos relacionales distintos (PostgreSQL, MySQL, MariaDB, SQL Server, Oracle) bajo condiciones de hardware equivalentes?
+
+#### Definición de Variables:
+##### -Variable Dependiente ($Y$): Tiempo de ejecución [ms]. Escala de razón.
+##### - Factor Intra-sujeto ($X$): Motor de base de datos (5 niveles: PostgreSQL, MySQL, MariaDB, SQL Server, Oracle).
+#### - Bloque (Sujeto): ID de la consulta (1 a 5.000). Controla la variabilidad de la "dificultad" intrínseca de cada consulta.
+
+#### Hipótesis Matemáticas:
+##### Sean $\mu_P, \mu_{My}, \mu_{Ma}, \mu_S, \mu_O$ las medias poblacionales de los tiempos de ejecución para cada motor. Sea $\mu_{d_{X-Y}}$ la media de las diferencias pareadas entre dos motores.
+
+###### - $H_0: \mu_{d_{P-My}} = \mu_{d_{P-Ma}} = \dots = 0$. (El tiempo medio es el mismo en todos los motores).
+###### - $H_A: \exists X,Y \in \{P, My, Ma, S, O\} \mid \mu_{d_{X-Y}} \neq 0$. (Al menos un par de motores presenta tiempos medios de ejecución distintos).
+
+### Paso 2: Generación Paramétrica de la Población
+#### Al generar 5 distribuciones normales independientes se destruyes la correlación intra-sujeto. El tiempo de una consulta en PostgreSQL debe estar altamente correlacionado con el tiempo de esa misma consulta en Oracle.
+
+#### Para garantizar la Esfericidad (varianzas de las diferencias iguales entre todos los niveles), usamos un modelo de efectos aditivos:
+
+##### $$Tiempo_{ij} = \mu + Bloque_i + Motor_j + \epsilon_{ij}$$
+```{r}
+library(dplyr)
+library(tidyr)
+library(ez)
+library(ggpubr)
+
+set.seed(404)
+n_queries <- 5000
+motores <- c("PostgreSQL", "MySQL", "MariaDB", "SQLServer", "Oracle")
+
+dificultad_base <- rnorm(n_queries, mean = 800, sd = 250)
+efecto_motor <- c(PostgreSQL = -50, MySQL = 40, MariaDB = 30, SQLServer = -10, Oracle = -40)
+sigma_error <- 30
+
+datos_anchos <- data.frame(id_query = 1:n_queries)  # ← INTEGER, no factor aún
+
+for (m in motores) {
+  tiempo_simulado <- dificultad_base + efecto_motor[m] + rnorm(n_queries, 0, sigma_error)
+  datos_anchos[[m]] <- pmax(tiempo_simulado, 10)
+}
+
+n_muestra <- 150
+set.seed(123)
+ids_seleccionados <- sample(1:n_queries, n_muestra, replace = FALSE)
+
+datos_anchos_muestra <- datos_anchos %>%
+  filter(id_query %in% ids_seleccionados)
+
+datos_largos_muestra <- datos_anchos_muestra %>%
+  pivot_longer(
+    cols = all_of(motores),
+    names_to  = "Motor",
+    values_to = "Tiempo"
+  ) %>%
+  mutate(
+    id_query = factor(id_query),
+    Motor    = factor(Motor)
+  )
+```
+
+Ejecutamos la prueba (ya cumplimos esfericidad, normalidad, intervalos iguales e independencia por la simulación)
+```{r}
+prueba_anova <- ezANOVA(
+  data        = datos_largos_muestra,
+  dv          = Tiempo,
+  wid         = id_query,
+  within      = Motor,
+  detailed    = TRUE,
+  return_aov  = TRUE
+)
+
+print(prueba_anova)
+```
+
+Se rechaza H₀. Existe evidencia estadísticamente significativa de que al menos un par de motores presenta tiempos medios de ejecución distintos (F(4, 596) = 276.87, p < .001, η²g = 0.023). La esfericidad fue confirmada por la prueba de Mauchly (W = 0.913, p = .142), por lo que los resultados sin corrección son válidos.
+
+Con un estadístico F(4, 596) = 276.87 y un p-valor de 2.37 × 10⁻¹³⁴, se rechaza la hipótesis nula con un nivel de confianza prácticamente absoluto: los cinco motores de bases de datos no presentan el mismo tiempo medio de ejecución al procesar las mismas consultas analíticas.
+Antes de interpretar el resultado, la prueba de Mauchly arrojó W = 0.913 con p = 0.142, lo que indica que no se viola el supuesto de esfericidad — las varianzas de las diferencias entre pares de motores son estadísticamente homogéneas. Por tanto, los resultados sin corrección son los que deben reportarse, aunque las correcciones de Greenhouse-Geisser y Huynh-Feldt confirman exactamente lo mismo.
+Respecto al tamaño del efecto, el η²g = 0.023 indica que el factor Motor explica aproximadamente un 2.3% de la varianza total. Este valor parece modesto, pero es esperable en un diseño de medidas repetidas donde la mayor parte de la varianza es absorbida por el bloque (la "dificultad" intrínseca de cada consulta, recogida en el Estrato 1 con SC = 39 460 850). El error residual del estrato intra-bloque fue de solo 29.32 ms, lo que refleja que el modelo de efectos aditivos funcionó correctamente al aislar la variabilidad entre consultas.
+En términos sustantivos, existen diferencias reales en el rendimiento de los motores bajo condiciones equivalentes de hardware, aunque la magnitud práctica de esas diferencias requeriría un análisis post-hoc (Bonferroni o Tukey para medidas repetidas) para identificar qué pares de motores difieren entre sí.

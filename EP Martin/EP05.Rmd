@@ -1,0 +1,185 @@
+---
+title: "EP05"
+author: "Equipo 9"
+date: "2026-04-30"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+# Cargamos las librerías que usaremos para manipulación y pruebas
+library(dplyr)
+library(tidyr)
+library(ggpubr)
+library(car)
+```
+
+## Pregunta 1: ¿Existen diferencias en el tiempo de resolución de cubos Megaminx entre participantes de Chile, Argentina y Perú?
+
+### 1. Obtención y preparación de Datos
+
+Primero, cargamos los datos y los filtramos. Para el análisis ANOVA necesitamos que los datos estén en **formato largo**, donde una columna sea el factor (país) y otra la variable dependiente (tiempo). Sin embargo, también generaremos el **formato ancho** para explorar la estructura de los datos, tal como se solicita.
+
+```{r datos}
+# Leemos el archivo y quitamos la primera columna si es solo un índice
+datos <- read.csv2("EP05 Datos.csv")
+if("X" %in% colnames(datos)) datos <- datos %>% select(-X)
+
+# 1.1 Formato Largo (Ideal para modelar en R)
+datos_largo <- datos %>%
+  filter(tipo == "Megaminx" & pais %in% c("Chile", "Argentina", "Perú")) %>%
+  mutate(pais = factor(pais)) # Factorizar es clave para que R lo trate como categoría
+
+# 1.2 Formato Ancho
+# Creamos un ID secuencial para evitar que pivot_wider colapse los datos en listas
+datos_ancho <- datos_largo %>%
+  group_by(pais) %>%
+  mutate(id = row_number()) %>%
+  pivot_wider(names_from = pais, values_from = tiempo) %>%
+  select(-id, -tipo)
+
+head(datos_largo, 3)
+head(datos_ancho, 3)
+```
+
+### 2. Formulación de Hipótesis
+
+Para responder a la pregunta de investigación usando un ANOVA, definimos a $\mu$ como el tiempo poblacional promedio (en segundos) que toma resolver un cubo Megaminx para los competidores de un determinado país. Las hipótesis a contrastar son:
+
+*   **Hipótesis Nula ($H_0$):** $\mu_{\text{Chile}} = \mu_{\text{Argentina}} = \mu_{\text{Perú}}$. (El tiempo promedio de resolución es idéntico en las poblaciones de los tres países).
+*   **Hipótesis Alternativa ($H_A$):** Existe al menos un par de países $i, j$ tal que $\mu_i \neq \mu_j$. (Al menos un país tiene un tiempo de resolución poblacional distinto al resto).
+
+Definiremos un nivel de significación estándar $\alpha = 0.05$.
+
+### 3. Verificación de Condiciones
+
+Para que el modelo ANOVA clásico (de Fisher) entregue resultados válidos, debemos comprobar tres supuestos:
+
+**1. Independencia:** Asumimos por el contexto del campeonato que los tiempos son independientes. El tiempo que tarda un participante chileno no influye en el tiempo que tarda un argentino.
+
+**2. Normalidad:** Evaluaremos visualmente la normalidad usando un gráfico Q-Q. No usamos la prueba de Shapiro-Wilk porque nuestra muestra es muy grande y el test sería demasiado sensible a desviaciones mínimas sin importancia empírica.
+```{r normalidad, fig.height=4, fig.width=8}
+ggqqplot(datos_largo, x = "tiempo", facet.by = "pais",
+         color = "pais", palette = "jco",
+         title = "Gráfico Q-Q: Tiempos de Megaminx por País")
+```
+*Interpretación:* Al observar el gráfico, vemos que los puntos de los tres países se alinean bastante bien sobre la recta diagonal teórica y caen dentro de las bandas de confianza. Por lo tanto, podemos asumir que el supuesto de normalidad se cumple razonablemente.
+
+**3. Homocedasticidad (Igualdad de Varianzas):** Usamos el Test de Levene (basado en la mediana para mayor robustez). La hipótesis nula de Levene asume que las varianzas son iguales.
+```{r homocedasticidad}
+leveneTest(tiempo ~ pais, data = datos_largo)
+```
+*Interpretación:* El Test de Levene nos entrega un p-valor de 0.6225. Como $0.6225 > 0.05$, no tenemos evidencia suficiente para rechazar la hipótesis nula de varianzas iguales. El supuesto de homocedasticidad **se cumple**. Tenemos luz verde para usar el ANOVA estándar.
+
+### 4. Prueba Ómnibus (ANOVA)
+```{r omnibus}
+modelo_anova <- aov(tiempo ~ pais, data = datos_largo)
+summary(modelo_anova)
+```
+
+*Interpretación del ANOVA:* El análisis de varianza arrojó un estadístico $F(2, 117) = 24.96$ con un valor $p = 9.39 \times 10^{-10}$. Como el p-valor es mucho menor a nuestro nivel de significación ($\alpha = 0.05$), rechazamos la hipótesis nula en favor de la alternativa. Concluimos que sí existen diferencias estadísticamente significativas en el tiempo de resolución del cubo Megaminx según el país de origen.
+
+### 5. Análisis Post-Hoc
+
+Como el ANOVA ómnibus fue significativo, necesitamos saber exactamente entre qué países están las diferencias. Para ello, usaremos la prueba **HSD de Tukey**. Usamos esta prueba y no "varias pruebas T separadas" porque Tukey ajusta matemáticamente el p-valor para evitar la inflación de la tasa de falsos positivos (Error Tipo I) al hacer comparaciones múltiples (controla el FWER).
+```{r posthoc}
+post_hoc <- TukeyHSD(modelo_anova)
+print(post_hoc)
+```
+
+*Interpretación del Post-Hoc:*
+Al observar la salida, nos enfocamos en la columna `p adj` y `diff`:
+1.  **Chile vs Argentina:** $p = 0.0000000$. Como $p < 0.05$, la diferencia es significativa. La diferencia de medias (`diff`) es negativa (-0.647 s), lo que significa que el tiempo de Chile es menor. **Chile es significativamente más rápido que Argentina.**
+2.  **Perú vs Chile:** $p = 0.000027$. Como $p < 0.05$, hay diferencia significativa. La diferencia es positiva (0.425 s), lo que significa que **Chile es significativamente más rápido que Perú**.
+3.  **Perú vs Argentina:** Aquí hay que tener cuidado. El p-valor ajustado es $p = 0.050980$. Como es **estrictamente mayor** que 0.05, no podemos rechazar la igualdad entre ambos. **No hay diferencia significativa entre los tiempos de Perú y Argentina.**
+
+### 6. Conclusión
+En respuesta a la pregunta de investigación original, se concluye con un 95% de confianza que el tiempo de resolución del Megaminx sí se ve afectado por el país del participante ($F(2, 117) = 24.96$, $p < 0.001$). El análisis post-hoc con ajuste de Tukey reveló que los participantes de Chile son estadísticamente más rápidos que los de Argentina y Perú. Sin embargo, no se detectó una diferencia estadísticamente significativa en los tiempos de resolución entre los competidores de Perú y Argentina ($p = 0.051$).
+
+---
+
+## Pregunta 2: Diseño Experimental y Simulación
+
+### 1. Pregunta de Investigación
+
+*   **Pregunta propuesta:** ¿Existen diferencias significativas en el tiempo de aprovisionamiento de una máquina virtual estándar (medido en segundos) entre cinco proveedores de servicios en la nube (AWS, Azure, Google Cloud, Oracle Cloud e IBM Cloud)?
+*   **Contexto y justificación:** En el mundo del desarrollo de software (DevOps), el tiempo que tarda la infraestructura en estar lista ("aprovisionamiento") es un KPI crítico. Revisando documentación técnica y benchmarks de la industria, el tiempo promedio para levantar una instancia básica de Linux suele rondar entre los 40 y 55 segundos. Analizaremos esto mediante un ANOVA.
+*   **Variable independiente (Factor):** Plataforma Cloud. Es categórica y tiene 5 niveles: "AWS", "Azure", "Google_Cloud", "Oracle_Cloud", "IBM_Cloud".
+*   **Variable dependiente:** Tiempo de despliegue. Variable continua, medida en segundos.
+
+### 2. Simulación de los Datos
+
+Como estudiantes generando datos simulados, debemos ser astutos para asegurar que este dataset de 5.000 observaciones por grupo (N=25.000 en total) cumpla perfectamente con los supuestos del ANOVA de una vía. 
+*   Para garantizar la **normalidad**, usamos la función `rnorm()`.
+*   Para garantizar la **homocedasticidad**, asignamos exactamente la misma desviación estándar teórica (`sd_global = 3.2`) a las 5 poblaciones generadas.
+*   Para garantizar diferencias medibles, se inyectan medias ligeramente distintas por proveedor.
+```{r simulacion_nube}
+set.seed(8080) # Fijamos semilla para la reproducibilidad
+
+n_obs <- 5000
+plataformas <- c("AWS", "Azure", "Google_Cloud", "Oracle_Cloud", "IBM_Cloud")
+sd_global <- 3.2  # Varianza constante para forzar homocedasticidad
+
+# Medias teóricas (inventadas para tener efecto significativo)
+medias <- c(
+  AWS = 45.1,
+  Azure = 48.3,
+  Google_Cloud = 44.8,
+  Oracle_Cloud = 52.0,
+  IBM_Cloud = 51.5
+)
+
+# Construcción del dataframe
+datos_nube <- data.frame(
+  plataforma = factor(rep(plataformas, each = n_obs)),
+  tiempo_despliegue = c(
+    rnorm(n_obs, mean = medias["AWS"], sd = sd_global),
+    rnorm(n_obs, mean = medias["Azure"], sd = sd_global),
+    rnorm(n_obs, mean = medias["Google_Cloud"], sd = sd_global),
+    rnorm(n_obs, mean = medias["Oracle_Cloud"], sd = sd_global),
+    rnorm(n_obs, mean = medias["IBM_Cloud"], sd = sd_global)
+  )
+)
+
+head(datos_nube)
+```
+
+### 3. Argumentación y Verificación Matemática
+
+Como se diseñó este dataset a partir de una distribución gaussiana mediante la función `rnorm()`, el supuesto de normalidad se asume cumplido por construcción. Además, la independencia se garantiza ya que la función simuló los datos de forma aislada para cada fila.
+
+El paso más crítico del diseño fue forzar la igualdad de varianzas. Lo verificaremos con el Test de Levene:
+```{r validacion_simulacion}
+leveneTest(tiempo_despliegue ~ plataforma, data = datos_nube)
+```
+
+*Interpretación de Levene:* El p-valor arrojado es $p = 0.7431$. Al ser mayor que $\alpha = 0.05$, confirmamos que no hay diferencias significativas entre las varianzas de los cinco grupos. Nuestra simulación cumple a cabalidad el supuesto de homocedasticidad, lo que hace al procedimiento ANOVA perfectamente pertinente.
+
+Por último, ejecutamos el ANOVA para confirmar que responde adecuadamente al efecto de medias que inyectamos en la simulación:
+```{r anova_simulacion}
+anova_nube <- aov(tiempo_despliegue ~ plataforma, data = datos_nube)
+summary(anova_nube)
+```
+*Interpretación Ómnibus:* El ANOVA detectó exitosamente diferencias masivas ($p < 2 \times 10^{-16}$) entre los proveedores. Al haber pasado el Test de Levene y ser un diseño normal, este ANOVA cuenta con el respaldo teórico total para su uso en este experimento simulado.
+
+--- 
+USO DE INTELIGENCIA ARTIFICIAL (IA)
+En estricto cumplimiento con la guía institucional para el "Uso responsable y ético de la IA en contextos académicos", se declara el uso de Google Gemini como herramienta de asistencia técnica y metodológica durante el desarrollo de esta evaluación.
+
+El flujo de trabajo con la IA se limitó a las siguientes tareas de optimización, manteniendo en todo momento la autoría intelectual del análisis, el código R y las conclusiones estadísticas:
+
+Auditoría lógica y estadística: Se utilizó la IA como contraparte analítica para validar la coherencia matemática entre los estadísticos obtenidos (ej. p-valores, test de Levene, F de Fisher) y las conclusiones redactadas.
+
+Estructuración y renderizado: Se empleó la herramienta para asistir en la maquetación del documento RMarkdown, asegurando que las secciones de código, salidas de consola y bloques matemáticos en LaTeX se integraran correctamente para una visualización óptima en el formato HTML final.
+
+Revisión ortotipográfica: El borrador final fue sometido a una revisión de sintaxis y ortografía, exigiendo que no se alteraran las ideas originales ni la jerga técnica.
+
+Prompt final utilizado para la revisión del documento:
+
+"Revisa el siguiente documento RMarkdown que he redactado con mis respuestas, código y análisis estadístico. Tu tarea es actuar como un linter de texto: corrige exclusivamente errores ortográficos, de puntuación y fallos de formato Markdown que puedan romper el 'Knit' a HTML. Reporta cualquier salto lógico entre mis p-valores observados y mis conclusiones, pero tienes estrictamente prohibido alterar mis ideas, generar contenido nuevo o modificar mis interpretaciones estadísticas. Respeta mi redacción original al máximo."
+```
+
+
+
+
+
+

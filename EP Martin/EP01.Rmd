@@ -1,0 +1,187 @@
+---
+title: "Actividad 1"
+author: "Martin Araya, Benjamín Letelier, Benjamín Paredes [Equipo 10]"
+date: "2026-04-02"
+output: html_document
+---
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+if(!require(dplyr)) install.packages("dplyr") #Para filtrar/leer excel
+if(!require(ggplot2)) install.packages("ggplot2") #Para graficar
+if(!require(ggpubr)) install.packages("ggpubr") # <--  gghistogram y ggscatter
+```
+1. Obtener el archivo (en la carpeta compartida para este ejercicio) con una selección de datos públicos recopilados por la encuesta Casen 2017 en la Región Metropolitana. La siguiente es una breve descripción de las columnas seleccionadas:
+
+    folio: identificador del hogar
+    o: número de orden de la persona dentro del hogar
+    id.vivienda: identificador de la vivienda
+    hogar: identificación del hogar en la vivienda
+    region: region
+    provincia: provincia
+    comuna: comuna
+    ing.comuna: posición en el ranking histórico del ingreso de la comuna (ascendente)
+    zona: área geográfica (Urbano, Rural)
+    sexo: sexo de la persona registrada
+    edad: edad de la persona registrada
+    ecivil: estado civil de la persona registrada
+    ch1: situación ocupacional de la persona registrada
+    ytot: ingreso total
+
+```{r}
+datos = read.csv("EP01 Datos Casen 2017.csv", stringsAsFactors = TRUE, header = TRUE, sep = ";")
+```
+
+
+2. Los ingresos de los habitantes de la RM, ¿van incrementándose con la edad de forma similar en hombres y mujeres?
+
+```{r}
+# dado que todas las observaciones son de la RM, se omite el filtro de region.
+filtrado <- datos %>% select(sexo, edad, ytot)
+hombres <- filtrado %>% filter(sexo == "Hombre")
+mujeres <- filtrado %>% filter(sexo == "Mujer")
+
+# summary() (Medidas de tendencia central y posición): Su objetivo es describir el comportamiento general de la edad 
+#           y los ingresos para hombres y mujeres por separado. Muestra dónde se concentra la muestra (media/mediana)
+#           y sus valores extremos (mínimo/máximo).
+
+# sd() y var() (Medidas de dispersión): Su objetivo es cuantificar la variabilidad de los ingresos (ytot). Permite
+#           entender qué tan desiguales son los sueldos dentro del mismo grupo (hombres o mujeres). Una desviación
+#           estándar alta indica que los sueldos están muy alejados del promedio.
+
+summary(hombres)
+sdH = sd(hombres[["ytot"]], na.rm = TRUE)
+varH = var(hombres[["ytot"]], na.rm = TRUE)
+cat("Desviación Estandar Salario hombres: ")
+print(sdH)
+cat("Varianza Salario hombres: ")
+print(varH)
+
+cat("\n")
+
+summary(mujeres)
+sdM = sd(mujeres[["ytot"]], na.rm = TRUE)
+varM = var(mujeres[["ytot"]], na.rm = TRUE)
+cat("Desviación Estandar Salario mujeres: ")
+print(sdM)
+cat("Varianza Salario mujeres: ")
+print(varM)
+```
+
+
+
+
+Como se puede apreciar, existe una cantidad muy similar de hombres y mujeres, con distribuciones etarias igualmente similares. Dado que las mujeres reciben menos salario que los hombres, no es posible comparar directamente los datos de tendencia central.
+
+
+```{r}
+graficoSexo <- gghistogram(filtrado, x="sexo", xlab ="Sexo", ylab="Frecuencia", title="Distribución de Sexo", stat="count", color="red", fill="red")
+
+graficoEdadHombre <- gghistogram(hombres, x="edad", xlab ="Edad", ylab="Frecuencia", title="Distribución de Edad en Hombres", color="lightblue", fill="lightblue")
+
+graficoEdadMujer <- gghistogram(mujeres, x="edad", xlab ="Edad", ylab="Frecuencia", title="Distribución de Edad en Mujeres",  color="lightpink", fill="lightpink")
+
+graficoYtotHombre <- gghistogram(hombres, x="ytot", xlab ="Salario", ylab="Frecuencia", title="Distribución de Salario en Hombres", color="skyblue", fill="skyblue")
+
+graficoYtotMujer <- gghistogram(mujeres, x="ytot", xlab ="Salario", ylab="Frecuencia", title="Distribución de Salario en Mujeres", color="pink", fill="pink")
+
+# graficoSexo muestra un conteo total de la muestra, evidenciando si los datos están balanceados entre la cantidad de hombres y mujeres.
+print(graficoSexo)
+
+# graficoEdadHombre y graficoEdadMujer muestran la distribución etaria. Permiten visualizar si la estructura demográfica de la muestra es similar para ambos géneros (por ejemplo, si la mayoría de los encuestados son jóvenes o adultos mayores).
+print(graficoEdadHombre)
+print(graficoEdadMujer)
+
+# graficoYtotHombre y graficoYtotMujer muestran la distribución de los ingresos. Típicamente evidencian una asimetría hacia la derecha (muchas personas concentradas en sueldos bajos/medios y una cola larga de pocos individuos con sueldos extremadamente altos).
+print(graficoYtotHombre)
+print(graficoYtotMujer)
+```
+
+
+La distribución en los histogramas lucen bastante similares en términos de salario para ambos géneros, a pesar de que aún se evidencia que las mujeres reciben salarios menores.
+
+Para poder comparar los datos se decidió realizar una razón entre la proporción de los salarios promedio de cada sexo, y entre la proporción de las desviaciones estándar. Mientras más similares sean sus distribuciones, el resultado de la razón debiera ser más cercano a 1.
+
+
+```{r}
+promedio_M <- mean(mujeres$ytot, na.rm = TRUE)
+promedio_H <- mean(hombres$ytot, na.rm = TRUE)
+
+cat("\nRazón entre las proporciones de promedios y desviaciones estándar de los salarios: ")
+print((promedio_M / promedio_H) / (sdM / sdH))
+```
+
+Se obtuvo como resultado cercano a 1.02, por lo que proporcionalmente son similares. Sin embargo, esto no nos dice nada sobre el aumento del salario con relación al aumento de la edad.
+
+```{r}
+graficoRelacionH <- ggscatter(hombres, x="edad", y="ytot", xlab ="Edad", ylab="Salario", title="Distribución de Salario respecto de la Edad en Hombres", color="skyblue")
+
+graficoRelacionM <- ggscatter(mujeres, x="edad", y="ytot", xlab ="Edad", ylab="Salario", title="Distribución de Salario respecto de la Edad en Mujeres", color="pink")
+
+print(graficoRelacionH)
+print(graficoRelacionM)
+```
+
+
+```{r}
+# crear gráfico base SOLO con la curva de tendencia
+grafico_base <- ggplot(filtrado, aes(x = edad, y = ytot, color = sexo)) +
+  geom_smooth(method = "loess", se = TRUE)
+
+# coordenadas (x, y) EXACTAS que calculó ggplot para dibujar esa línea
+datos_curva <- ggplot_build(grafico_base)$data[[1]]
+
+# se busca el punto más alto (peak de la curva) para cada sexo
+niveles_sexo <- levels(as.factor(filtrado$sexo)) # Para mapear el grupo 1 y 2 a Hombre/Mujer
+
+maximos_exactos <- datos_curva %>%
+  group_by(group) %>%
+  slice_max(order_by = y, n = 1) %>%
+  mutate(sexo = niveles_sexo[group]) %>%
+  select(edad = x, ingreso_peak = y, sexo)
+
+# imprimimos los valores para que los redacten en el informe
+cat("\n--- Cima exacta extraída de la curva de ggplot ---\n")
+print(maximos_exactos)
+
+# Construimos gráfico final inyectando coordenadas
+grafico_final <- grafico_base + 
+  
+  # Líneas cruzadas exactas
+  geom_vline(data = maximos_exactos, aes(xintercept = edad, color = sexo), 
+             linetype = "dashed", inherit.aes = FALSE) +
+  geom_hline(data = maximos_exactos, aes(yintercept = ingreso_peak, color = sexo), 
+             linetype = "dashed", inherit.aes = FALSE) +
+  
+  # Punto exacto en el píxel de la cima
+  geom_point(data = maximos_exactos, aes(x = edad, y = ingreso_peak, color = sexo), 
+             size = 3, inherit.aes = FALSE) +
+  
+  # Etiqueta de texto (redondeada para que no salgan decimales raros en la edad)
+  geom_text(data = maximos_exactos, aes(x = edad, y = ingreso_peak, color = sexo,
+            label = paste0(round(edad, 1), " años\n$", round(ingreso_peak, 0))),
+            vjust = -0.5, hjust = -0.2, show.legend = FALSE, size = 3.5, fontface = "bold", inherit.aes = FALSE) +
+  
+  # Límite visual para los valores atípicos
+  coord_cartesian(ylim = c(0, 1500000)) + 
+  
+  labs(title = "Evolución del Ingreso Total según Edad y Sexo",
+       x = "Edad (años)",
+       y = "Ingreso Total (ytot)",
+       color = "Sexo") +
+  theme_minimal()
+
+print(grafico_final)
+```
+
+¿Los ingresos van incrementándose con la edad de forma similar en hombres y mujeres?
+No. Aunque se puede apreciar que ambas curvas comparten una forma parabólica general, el incremento de los ingresos presenta diferencias significativas por sexo en su magnitud, tasa de crecimiento y duración.
+
+También se evidencian comportamientos como los siguientes:
+
+- Diferencia en la tasa de crecimiento: En plena etapa de inserción laboral, la trayectoria de los ingresos diverge rápidamente. La curva masculina presenta una inclinación pronunciada, traduciéndose en saltos salariales más veloces, mientras que el avance de las mujeres frena mucho antes de lo esperado.
+
+- El punto de máxima ganancia ilustra una doble desventaja para las mujeres. No solo llegan a su tope antes (a los 39.9 años versus los 43.9 de los hombres), sino que la diferencia monetaria es profunda. El peak masculino escala hasta el $1.082.088 promedio, dejando atrás al femenino ($719.668) por más de $360.000. Es, en esencia, una brecha del 50% en la etapa cumbre de la carrera.
+
+- Una vez alcanzados los ingresos máximos, ambas trayectorias inician una fase de contracción sostenida. Lo interesante es que la tasa de decaimiento es similar en ambos géneros, lo que provoca que la brecha salarial absoluta quede "congelada" durante el resto de la vida activa.
+
+- Cualquier anomalía o cruce de líneas pasados los 80 años carece de valor concluyente. La escasez extrema de encuestados en este bloque demográfico dispara el margen de error (el ensanchamiento del área gris), convirtiendo a ese segmento en ruido estadístico.

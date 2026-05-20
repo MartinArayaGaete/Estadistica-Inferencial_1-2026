@@ -1,0 +1,218 @@
+---
+title: "Actividad 2"
+author: "Martin Araya, Benjamin Letelier, Benjamin Paredes"
+date: "2026-04-10"
+output: html_document
+---
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+if(!require(dplyr)) install.packages("dplyr") #Para filtrar/leer excel
+if(!require(tidyr)) install.packages("tidyr")
+if(!require(ggplot2)) install.packages("ggplot2") #Para graficar
+if(!require(ggpubr)) install.packages("ggpubr")
+if(!require(ggmosaic)) install.packages("ggmosaic")
+if(!require(DT)) install.packages("DT")
+if(!require(kableExtra)) install.packages("kableExtra") #Para crear la tabla
+if(!require(pwr)) install.packages("pwr")
+if(!require(tidyverse)) install.packages("tidyverse")
+if(!require(rcompanion)) install.packages("rcompanion")
+if(!require(RVAideMemoire)) install.packages("RVAideMemoire")
+if(!require(ez)) install.packages("ez")
+if(!require(nlme)) install.packages("nlme")
+if(!require(emmeans)) install.packages("emmeans")
+if(!require(pROC)) install.packages("pROC")
+if(!require(caret)) install.packages("caret")
+if(!require(leaps)) install.packages("leaps")
+if(!require(car)) install.packages("car")
+if(!require(plotly)) install.packages("plotly")
+if(!require(BSDA)) install.packages("BSDA")
+if(!require(TeachingDemos)) install.packages("TeachingDemos")
+```
+---
+
+
+¿Será cierto que hay menos atletas provenientes de la zona Centro-Sur que redujeron sus mejores marcas en al menos 5,3 segundos que atletas de la zona Sur que lo hicieron en al menos 1,4 segundos luego del entrenamiento?
+
+```{r}
+# ==========================================
+# PREGUNTA 1: Análisis de Proporciones
+# ==========================================
+
+# 1. Lectura y preparación de datos
+# ------------------------------------------
+datos <- read.csv2("EP02 Datos.csv", stringsAsFactors = TRUE, sep = ";")
+```
+
+```{r}
+str(datos)
+```
+Id: variable categórica
+Zona: variable categórica
+Previo: variable numérica continua
+Posterior: variable numérica continua
+
+
+```{r}
+# Filtramos por zona y calculamos inmediatamente la diferencia (Previo - Posterior)
+# Una diferencia positiva significa que redujo su tiempo (mejoró).
+datos_CS <- datos %>% 
+  filter(Zona == "Centro-Sur") %>% 
+  mutate(Diferencia = Previo - Posterior)
+
+datos_S <- datos %>% 
+  filter(Zona == "Sur") %>% 
+  mutate(Diferencia = Previo - Posterior)
+
+
+# Análisis Exploratorio de Datos (Gráficos)
+# ------------------------------------------
+# Visualizamos la "compuerta lógica". El área a la derecha de la línea segmentada 
+# representa los atletas que cumplen la condición (los "éxitos").
+
+graficoDiferencia_CS <- gghistogram(datos_CS$Diferencia, 
+                                    xlab = "Diferencia (Previo - Posterior)", 
+                                    ylab = "Frecuencia", 
+                                    title = "Centro-Sur: Atletas que redujeron al menos 5.3s", 
+                                    color = "orange", fill = "orange") + 
+                        geom_vline(xintercept = 5.3, color = "red", size = 1, linetype = "dashed")
+
+graficoDiferencia_S <- gghistogram(datos_S$Diferencia, 
+                                   xlab = "Diferencia (Previo - Posterior)", 
+                                   ylab = "Frecuencia", 
+                                   title = "Sur: Atletas que redujeron al menos 1.4s", 
+                                   color = "skyblue", fill = "skyblue") + 
+                       geom_vline(xintercept = 1.4, color = "red", size = 1, linetype = "dashed")
+
+# Mostrar gráficos
+print(graficoDiferencia_CS)
+print(graficoDiferencia_S)
+
+
+# 3. Inferencia Estadística (Prueba de Proporciones)
+# ------------------------------------------
+# Contamos cuántos atletas superan la compuerta lógica y el total por muestra
+exitos_CS <- sum(datos_CS$Diferencia >= 5.3)
+n_CS <- nrow(datos_CS)
+
+exitos_S <- sum(datos_S$Diferencia >= 1.4)
+n_S <- nrow(datos_S)
+
+cat("\n--- Resumen de Conteos ---\n")
+cat("Centro-Sur:", exitos_CS, "de", n_CS, "cumplen la condición.\n")
+cat("Sur:", exitos_S, "de", n_S, "cumplen la condición.\n\n")
+
+# H0: p_CS >= p_S (La proporción en Centro-Sur es mayor o igual)
+# HA: p_CS < p_S  (La proporción en Centro-Sur es menor que en el Sur)
+# Nivel de significancia (alpha) = 0.05
+
+prueba_proporciones <- prop.test(x = c(exitos_CS, exitos_S), 
+                                 n = c(n_CS, n_S), 
+                                 alternative = "less", 
+                                 conf.level = 0.95)
+
+# Imprimir el resultado formal de la prueba
+print(prueba_proporciones)
+```
+Con un 95% de confianza, la evidencia empírica soporta la afirmación de que hay una menor proporción de atletas del Centro-Sur que redujeron su marca en al menos 5.3 segundos, en comparación con los del Sur que la redujeron en al menos 1.4 
+
+
+
+¿Sugieren los datos que, en promedio, atletas provenientes de la zona Centro-Norte ven reducida su mejor marca en 3,4 segundos tras el entrenamiento?
+```{r}
+datos_CN <- datos %>% 
+  filter(Zona == "Centro-Norte") %>% 
+  mutate(Diferencia = Previo - Posterior)
+
+# Hipótesis Nula H0: El promedio de reducción de tiempo es igual a 3,4 segundos. mu = 3.4
+# Hipótesis Alternativa HA: El promedio de reducción de tiempo es distinto de 3,4 segundos. mu != 3.4
+
+
+cat("--- Prueba de Normalidad (Shapiro-Wilk) ---\n")
+prueba_shapiro <- shapiro.test(datos_CN$Diferencia)
+print(prueba_shapiro)
+
+cat("\n--- Prueba T de una muestra ---\n")
+prueba_t <- t.test(x = datos_CN$Diferencia, 
+                   mu = 3.4, 
+                   alternative = "two.sided", 
+                   conf.level = 0.95)
+
+print(prueba_t)
+```
+Dado que p-value es menor a 0.05, los datos no sugieren que la reducción promedio sea de 3,4 segundos
+
+
+
+El Comité Olímpico cree que el mejor tiempo medio de atletas que provienen de la zona Sur es inferior a 14,3 segundos antes del entrenamiento. ¿Soportan los datos esta afirmación?
+```{r}
+# ==========================================
+# PREGUNTA 3: Análisis de Media (1 muestra, unilateral)
+# ==========================================
+
+# 1. Filtramos los datos para aislar a la población de interés
+datos_S <- datos %>% filter(Zona == "Sur")
+
+# 2. Análisis Exploratorio
+# Un boxplot simple para ver dónde está el centro de los datos respecto a 14.3
+boxplot(datos_S$Previo, 
+        main = "Tiempos Previos - Zona Sur", 
+        ylab = "Segundos", 
+        col = "lightgreen")
+abline(h = 14.3, col = "red", lwd = 2, lty = 2) # Línea de referencia del Comité
+
+# 3. Verificación de Normalidad (Prueba de Shapiro-Wilk)
+# Como evaluamos medias de una muestra pequeña/mediana, exigimos normalidad.
+# Aquí tu código original estaba perfecto.
+cat("--- Prueba de Normalidad (Shapiro-Wilk) ---\n")
+prueba_shapiro_S_previo <- shapiro.test(datos_S$Previo)
+print(prueba_shapiro_S_previo)
+
+# 4. Prueba T de una muestra (Unilateral)
+# x = la columna específica que queremos evaluar
+# mu = 14.3 (el umbral del Comité)
+# alternative = "less" (porque la hipótesis alternativa es que la media es MENOR)
+cat("\n--- Prueba T de una muestra ---\n")
+prueba_t_S <- t.test(x = datos_S$Previo, 
+                     mu = 14.3, 
+                     alternative = "less", 
+                     conf.level = 0.95)
+
+print(prueba_t_S)
+```
+No hay evidencia suficiente para rechazar la Hipótesis Nula. Los datos no soportan de manera concluyente la creencia del Comité de que el tiempo medio sea inferior a 14,3 segundos
+
+
+
+¿Es posible afirmar que, en promedio, atletas que provienen de la zona Centro-Norte superan a los provenientes de la zona Centro-Sur por 2,9 segundos antes del entrenamiento?
+```{r}
+# ==========================================
+# PREGUNTA 4: Análisis de Medias (2 muestras independientes)
+# ==========================================
+
+# 1. Filtramos los datos para tener los dos grupos aislados
+datos_CN <- datos %>% filter(Zona == "Centro-Norte")
+datos_CS <- datos %>% filter(Zona == "Centro-Sur")
+
+# 2. Verificación de Normalidad (Shapiro-Wilk)
+# Se debe evaluar la variable 'Previo' en CADA grupo por separado
+cat("--- Normalidad Centro-Norte ---\n")
+print(shapiro.test(datos_CN$Previo))
+
+cat("\n--- Normalidad Centro-Sur ---\n")
+print(shapiro.test(datos_CS$Previo))
+
+
+# 3. Prueba T para dos muestras independientes
+# x = Centro-Sur (el grupo teóricamente más lento/con mayor tiempo)
+# y = Centro-Norte (el grupo teóricamente más rápido/con menor tiempo)
+# mu = 2.9 (La diferencia exacta que queremos contrastar)
+# alternative = "two.sided" (Queremos ver si la diferencia es igual o distinta a 2.9)
+cat("\n--- Prueba T de dos muestras ---\n")
+prueba_t_dos_muestras <- t.test(x = datos_CS$Previo, 
+                                y = datos_CN$Previo, 
+                                mu = 2.9, 
+                                alternative = "two.sided", 
+                                conf.level = 0.95)
+
+print(prueba_t_dos_muestras)
+```
+Los datos son consistentes con la afirmación; es plausible que el Centro-Norte supere al Centro-Sur por un promedio de 2,9 segundos

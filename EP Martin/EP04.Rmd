@@ -1,0 +1,214 @@
+---
+title: "EP04"
+author: "Equipo 9"
+date: "2026-04-24"
+output: html_document
+---
+
+#### En un evento deportivo, las y los participantes tienen la opción de inscribirse en una carrera de velocidad o en una carrera de resistencia. Después de la inscripción, se sabe que, de los 11 hombres y 12 mujeres que participaron, 9 hombres y 4 mujeres prefieren inscribirse en la carrera de velocidad. ¿Tiene relación el sexo de las personas que participan del evento deportivo e inscribirse en la carrera de velocidad o en la carrera de resistencia?
+```{r setup, include=FALSE}
+# Cargar las librerías necesarias
+library(tidyverse)
+library(rstatix)
+```
+
+```{r}
+# 1. Construir la matriz de contingencia
+# Filas: Hombres, Mujeres
+# Columnas: Velocidad, Resistencia
+hombres_velocidad <- 9
+hombres_resistencia <- 11 - 9
+mujeres_velocidad <- 4
+mujeres_resistencia <- 12 - 4
+
+matriz_carreras <- matrix(c(hombres_velocidad, hombres_resistencia, mujeres_velocidad, mujeres_resistencia), 
+                          nrow = 2, byrow = TRUE)
+rownames(matriz_carreras) <- c("Hombres", "Mujeres")
+colnames(matriz_carreras) <- c("Velocidad", "Resistencia")
+
+# 2. Ejecutar la prueba exacta de Fisher
+resultado_fisher <- fisher.test(matriz_carreras, conf.level = 0.95)
+print(resultado_fisher)
+matriz_carreras
+```
+Dado que el p-value ($p = 0.03607$) es menor que nuestro nivel de significancia ($\alpha = 0.05$), se rechaza $H_0$. Por lo tanto, concluimos que el sexo y la preferencia de carrera no son independientes.
+
+La salida "alternative hypothesis: true odds ratio is not equal to 1" nos confirma matemáticamente esta decisión: la proporción (los momios) de elegir velocidad no es idéntica entre hombres y mujeres.
+
+Con "sample estimates: odds ratio 8.042442", el modelo indica que las chances de que un hombre prefiera la carrera de velocidad son aproximadamente 8 veces mayores que las de una mujer en esta muestra en particular.
+
+Respecto al "95 percent confidence interval: 0.9868616 112.5557919", notamos que incluye marginalmente el valor $1$ (situación de no efecto). Aunque bajo la regla clásica de intervalos esto sugeriría no rechazar $H_0$, nos regimos por el valor-$p$ debido a que, en esta prueba, la estimación exacta de la probabilidad choca con la estimación asintótica del intervalo producto de trabajar con datos discretos y un tamaño muestral extremadamente pequeño ($N=23$).
+
+¿Se puede extrapolar? Sí existe evidencia de una asociación estructural, pero la enorme amplitud del intervalo de confianza nos advierte que la precisión de nuestra estimación es bajísima. Para generalizar la magnitud real de esta preferencia poblacional con seguridad técnica, es obligatorio repetir el experimento con un tamaño muestral significativamente mayor.
+
+
+---
+
+#### Una agencia de marketing desea determinar si hay una diferencia significativa en la efectividad de tres estrategias publicitarias utilizadas para promocionar un nuevo producto. Para ello, se ha recopilado información de personas que fueron expuestas a las tres estrategias publicitarias, registrando si mostraron una aceptación (A) o rechazo (R) a cada una de ellas.¿Qué puede concluir la agencia de marketing sobre la efectividad de las estrategias publicitarias para promover el nuevo producto? Indicación: obtenga la muestra de 50 personas a partir del archivo “EP04 Datos.csv” que se encuentra en el directorio compartido, usando la semilla 154.
+
+```{r}
+# 1. Cargar los datos
+# Asegúrate de que el archivo "EP04 Datos.csv" esté en tu directorio de trabajo
+# Puedes cambiar sep=";" si tu CSV usa punto y coma.
+datos <- read.csv2("EP04 Datos.csv", stringsAsFactors = FALSE)
+
+# Si los datos no incluyen una columna con el identificador del sujeto, la creamos
+if(!"Id" %in% names(datos)) {
+  datos$Id <- 1:nrow(datos)
+}
+
+# 2. Seleccionar la muestra de 50 personas usando la semilla 154
+set.seed(154)
+muestra <- datos %>% sample_n(50)
+
+# 3. Transformar los datos a formato largo (Long format)
+# Asumo que las columnas con los resultados se llaman "Estrategia1", "Estrategia2" y "Estrategia3"
+# Ajusta la función 'starts_with()' si tus columnas tienen otro prefijo.
+muestra_larga <- muestra %>%
+  pivot_longer(
+    cols = starts_with("Estrategia"), 
+    names_to = "Estrategia", 
+    values_to = "Respuesta"
+  ) %>%
+  # Creamos una variable numérica: 1 para Aceptación (A) y 0 para Rechazo (R)
+  mutate(
+    Respuesta_num = ifelse(Respuesta == "A", 1, 0),
+    Estrategia = as.factor(Estrategia),
+    Id = as.factor(Id)
+  )
+
+# 4. Prueba Ómnibus: Prueba Q de Cochran
+cat("--- Prueba Q de Cochran ---\n")
+test_cochran <- muestra_larga %>% 
+  cochran_qtest(Respuesta_num ~ Estrategia | Id)
+print(test_cochran)
+
+# 5. Prueba Post-hoc: Prueba de McNemar por pares
+# (Solo se evalúa si el p-value de Cochran es menor a tu nivel de significancia, ej. 0.05)
+cat("\n--- Análisis Post-Hoc: McNemar por pares (Ajuste de Holm) ---\n")
+test_posthoc <- muestra_larga %>%
+  pairwise_mcnemar_test(
+    Respuesta ~ Estrategia | Id, 
+    p.adjust.method = "holm"
+  )
+print(test_posthoc)
+
+```
+Para determinar si existe una diferencia significativa en la efectividad de las tres estrategias publicitarias, se analizó una muestra de 50 individuos que fueron expuestos a cada una de ellas, registrando sus respuestas en términos de Aceptación (A) o Rechazo (R). Dado que se trata de muestras relacionadas y una variable de respuesta dicotómica, se aplicó la Prueba Q de Cochran con un nivel de significancia del 5% ($\alpha = 0.05$).
+Al obtener un resultado general significativo, se procedió a realizar un análisis post-hoc utilizando la Prueba de McNemar para comparaciones por pares, aplicando el ajuste de Holm para controlar la tasa de falsos positivos al realizar múltiples comparaciones.
+
+Prueba Global: La prueba Q de Cochran arrojó un valor $p = 0.00711$. Al ser menor que 0.05, se rechaza la hipótesis nula de que todas las estrategias tienen la misma proporción de aceptación. Esto confirma que existe una diferencia estadísticamente significativa en la efectividad de al menos una de las estrategias.
+Comparaciones por Pares (Post-Hoc):
+
+-Estrategia 1 vs. Estrategia 2: Existe una diferencia estadísticamente significativa ($p-ajustado = 0.0239$).  
+
+-Estrategia 1 vs. Estrategia 3: Existe una diferencia estadísticamente significativa ($p-ajustado = 0.0246$).  
+
+-Estrategia 2 vs. Estrategia 3: No existe evidencia de diferencias significativas entre ambas ($p-ajustado = 1.0000$); su efectividad es estadísticamente equivalente.
+
+```{r}
+cat("\n--- Proporciones de Aceptación por Estrategia ---\n")
+# Calculamos el porcentaje real de aceptación (1s) para cada estrategia
+proporciones <- muestra_larga %>%
+  group_by(Estrategia) %>%
+  summarise(
+    Aceptacion_Total = sum(Respuesta_num),
+    Porcentaje = mean(Respuesta_num) * 100
+  )
+print(proporciones)
+```
+Al revisar las proporciones empíricas de la muestra (Estrategia 1: 32%, Estrategia 2: 60%, Estrategia 3: 58%), y cruzando esto con el post-hoc, concluimos que la Estrategia 1 no solo es estadísticamente distinta, sino que es significativamente inferior en efectividad a las otras dos (2 y 3), mientras que las estrategias 2 y 3 generan un impacto similar en el público.
+
+
+---
+
+#### Una investigación reciente en un laboratorio de Kanto se enfocó en analizar el efecto de una nueva técnica de entrenamiento en el rendimiento del ataque inicial de criaturas Pokémon. Para ello, se seleccionaron aleatoriamente 25 criaturas y registró su poder de ataque inicial. Luego, a este grupo se les sometió al entrenamiento nuevo y, al finalizar, se les registró nuevamente los niveles de ataque inicial. Los resultados se presentan a continuación:
+#### 2 criaturas tenían un nivel bajo de ataque antes y después del entrenamiento.
+#### 8 criaturas con nivel bajo de ataque inicial mostraron un aumento en su ataque después del entrenamiento.
+#### 12 criaturas mantuvieron un alto nivel de ataque antes y después del entrenamiento.
+#### 3 criatura mostró un nivel alto de ataque inicial, pero se redujo después del entrenamiento.
+#### ¿Hay evidencia de que el nuevo entrenamiento tiene un efecto significativo en el rendimiento del ataque inicial de las criaturas Pokémon?
+```{r}
+# 1. Crear la tabla de contingencia con los datos del problema
+# Usamos matrix() para organizar los datos de las 25 criaturas
+datos_pokemon <- matrix(
+  c(2, 8,   # Fila 1: Antes Bajo (Después Bajo = 2, Después Alto = 8)
+    3, 12), # Fila 2: Antes Alto (Después Bajo = 3, Después Alto = 12)
+  nrow = 2,
+  byrow = TRUE,
+  dimnames = list(
+    "Antes" = c("Bajo", "Alto"),
+    "Después" = c("Bajo", "Alto")
+  )
+)
+
+# Visualizar la tabla para asegurar que los datos están correctos
+cat("--- Tabla de Contingencia ---\n")
+print(datos_pokemon)
+
+# 2. Realizar la Prueba de McNemar
+# Por defecto, R aplica la corrección por continuidad de Yates
+resultado_mcnemar <- mcnemar.test(datos_pokemon)
+
+# 3. Mostrar los resultados de la prueba
+cat("\n--- Resultado de la Prueba de McNemar ---\n")
+print(resultado_mcnemar)
+```
+Para este diseño de medidas repetidas, utilizamos la prueba de McNemar, la cual centra su análisis exclusivamente en las frecuencias discordantes de la matriz (las 8 criaturas que mejoraron y las 3 que empeoraron). Matemáticamente, bajo la hipótesis nula de no efecto, se esperaría que los cambios de estado se distribuyan simétricamente según una distribución binomial. Dado que el estadístico evaluado sobre estas 11 criaturas discordantes arroja un valor-$p$ de 0.2278, que nos indica que esta diferencia no es lo suficientemente grande como para descartar que haya ocurrido por simple azar. Por lo tanto, concluimos que no hay evidencia estadística suficiente para afirmar que el nuevo entrenamiento produzca un cambio significativo en el ataque inicial de los Pokémon en esta muestra.
+
+
+---
+
+#### Un supermercado está interesado en determinar si la distribución de la clientela que prefieren pagar con diferentes métodos de pago es la misma en dos sucursales que están ubicadas en zonas de la cuidad con situación socioeconómica dispares (sucursal LC3 y sucursal LP2). Se seleccionaron aleatoriamente 32 personas de cada sucursal y se registró el método de pago utilizado por cada una. Se registraron que 6 personas pagaron con efectivo, 4 con tarjeta de crédito y 22 con tarjeta de débito en la sucursal LC3, mientras que 10 personas pagaron con efectivo, 14 con tarjeta de crédito y 8 con tarjeta de débito en la sucursal LP2.
+#### ¿Existe evidencia de que la proporción de clientes y clientas que prefieren pagar con diferentes métodos de pago sea la misma en ambas sucursales?
+```{r}
+# 1. Crear la tabla de contingencia con los datos observados
+# Ingresamos los datos por filas (primero la sucursal LC3, luego la LP2)
+datos_pagos <- matrix(
+  c(6, 4, 22,   # Fila 1: LC3 (Efectivo, Crédito, Débito)
+    10, 14, 8), # Fila 2: LP2 (Efectivo, Crédito, Débito)
+  nrow = 2,
+  byrow = TRUE,
+  dimnames = list(
+    "Sucursal" = c("LC3", "LP2"),
+    "Método de Pago" = c("Efectivo", "Crédito", "Débito")
+  )
+)
+
+# Visualizar la tabla de datos observados
+cat("--- Tabla de Frecuencias Observadas ---\n")
+print(datos_pagos)
+
+# 2. Ejecutar la Prueba Chi-cuadrado
+resultado_chi <- chisq.test(datos_pagos)
+
+# 3. Mostrar el resultado de la prueba estadística
+cat("\n--- Resultado de la Prueba Chi-cuadrado ---\n")
+print(resultado_chi)
+
+# 4. (Opcional) Verificar las frecuencias esperadas
+# Es una buena práctica para asegurar que el supuesto de la prueba se cumple (que sean >= 5)
+cat("\n--- Frecuencias Esperadas (deben ser idealmente >= 5) ---\n")
+print(resultado_chi$expected)
+```
+Previo a la interpretación del estadístico, se verificó el supuesto de validez de la prueba de Chi-cuadrado. Al inspeccionar la matriz de frecuencias esperadas generada por el modelo, se constata que todos los valores son superiores a 5 (siendo el menor igual a 8). Por lo tanto, la aproximación asintótica de la distribución Chi-cuadrado es matemáticamente válida para este conjunto de datos.
+
+Dado que el valor p (0.001438) es mucho menor que el nivel de significancia típico de 0.05, rechazamos la hipótesis nula.
+
+Esto nos permite concluir, con un alto nivel de confianza estadística, que la proporción de clientela que prefiere pagar con diferentes métodos de pago no es la misma en ambas sucursales.
+
+Si revisas la tabla generada en R, el análisis confirma lo que observamos a simple vista: la sucursal LC3 tiene una marcada tendencia hacia el uso de tarjeta de débito, mientras que en la sucursal LP2 el uso está mucho más distribuido, destacando una mayor preferencia por la tarjeta de crédito y el efectivo en comparación con la primera.
+
+
+---
+#### Declaración de Uso de Inteligencia Artificial (IA)
+En cumplimiento con la guía institucional para el "Uso responsable y ético de la IA en contextos académicos", el equipo declara el siguiente uso de herramientas de IA durante la resolución de esta actividad:
+
+Herramienta utilizada: Gemini (Gemini 3.1 Pro).
+
+Naturaleza del uso: Se utilizó la IA bajo un rol de tutoría en estadística inferencial y programación en R. El equipo elaboró el código original, seleccionó las pruebas no paramétricas (Fisher, Cochran, McNemar, Chi-cuadrado) y redactó las interpretaciones preliminares de los estadísticos y valores p obtenidos.
+
+Proceso de aprendizaje: La interacción con la herramienta se centró en validar la justificación matemática de las decisiones (por ejemplo, comprender la discrepancia matemática entre el cálculo de probabilidad hipergeométrica exacta y la aproximación asintótica del intervalo de confianza en la prueba de Fisher para muestras pequeñas, y fundamentar analíticamente el uso exclusivo de celdas discordantes en la prueba de McNemar).
+
+Prompt final utilizado para revisión de redacción:
+"Revisa cada respuesta, y como sabes, no me gusta dar las cosas por sentado [...] revisa que todo este acorde, una buena redaccion... mejoramela (no la estructures ni cambies la redaccion a algo muy robotico, copia el estilo, corrige, pero no hagas cosas que no van al caso), corrigiendo conclusiones que parezcan 'saltos de fe' sin fundamento estadístico detrás."
