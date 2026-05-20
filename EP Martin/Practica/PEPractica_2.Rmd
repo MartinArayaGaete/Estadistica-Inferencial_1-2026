@@ -1,0 +1,68 @@
+---
+title: "PEPractica_2"
+author: "Martin Araya"
+date: "2026-05-20"
+output: html_document
+---
+## Contexto: 
+##### Una empresa de ciberseguridad quiere saber si su nuevo simulador de entrenamiento mejora la velocidad de sus analistas. Han registrado el tiempo (en segundos) que tardan 20 analistas en identificar un ataque de phishing en el sistema antes de usar el simulador, y luego midieron a los mismos 20 analistas después de completar un mes de entrenamiento.
+
+Los datos están en un archivo llamado `tiempos_phishing.csv` con tres columnas: Analista (del 1 al 20), Tiempo_Antes y Tiempo_Despues.
+
+### *Pregunta:* ¿Existe evidencia estadística para afirmar que el entrenamiento produjo un cambio en el tiempo de detección de los analistas?
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+---
+
+# Paso 1: El Escaneo del Diseño (La trampa revelada)
+Aquí es donde usas tu árbol de decisión mental buscando las "palabras clave":
+
+1. Variable Respuesta: Tiempo en segundos (Numérica continua).
+2. Grupos: Antes y Después (2 mediciones).
+3. Relación: ¡Atención aquí! El enunciado dice que se midió a "los mismos 20 analistas". Esto significa que el dato de Juan "Antes" está amarrado al dato de Juan "Después". No son grupos independientes; son muestras pareadas (o dependientes).
+
+
+———> Ruta en tu árbol: Variable numérica -> 2 grupos -> Muestras Pareadas.
+
+# Paso 2: Las Hipótesis (El concepto de la "Diferencia")
+Cuando las muestras son pareadas, a la estadística no le importa cuánto se demoró Juan antes y cuánto después de forma aislada. Le importa la diferencia entre ambos tiempos (Antes menos Después).
+
+- $H_0$ (Hipótesis Nula): El entrenamiento no tiene efecto. La diferencia media de tiempos es cero. ($\mu_{diferencia} = 0$)
+- $H_A$ (Hipótesis Alternativa): El entrenamiento sí produce un cambio. La diferencia media de tiempos es distinta de cero. ($\mu_{diferencia} \neq 0$)
+
+
+# Paso 3: La Auditoría de Datos (Código RStudio)
+Aquí viene la segunda trampa clásica. ¡NO evalúas la normalidad del "Antes" y del "Después" por separado! Como te importa el cambio en cada analista, debes crear una nueva variable matemática que sea la resta de ambos, y a esa resta le calculas la normalidad.
+```{r}
+# 1. Leemos los datos
+datos <- read.csv("tiempos_phishing.csv")
+
+# 2. CREAMOS LA VARIABLE DIFERENCIA (Fuerza bruta matemática)
+# Restamos el vector "Antes" menos el vector "Despues"
+diferencia <- datos$Tiempo_Antes - datos$Tiempo_Despues
+
+# 3. PRUEBA DE NORMALIDAD (Shapiro-Wilk)
+# Solo le hacemos la prueba a la diferencia que acabamos de crear.
+shapiro.test(diferencia)
+```
+El resultado arroja p-value = 0.3499 $p \ge 0.05$, por lo que la diferencia de los tiempos es Normal 
+
+# Paso 4: La Bifurcación (La ejecución de la prueba)
+¿Notaste que aquí no mencioné la prueba de varianzas de Levene? Regla de oro: En muestras pareadas, jamás se revisan las varianzas porque no estás comparando dos grupos distintos, estás evaluando a un solo grupo contra sí mismo.
+
+Dado que la diferencia fue Normal (Paramétrico)
+###### Usas la misma $t$ de Student que antes, pero con un "switch" activado para decirle a R que están amarrados.
+```{r}
+# Prueba t para muestras pareadas (paired = TRUE es la clave)
+t.test(datos$Tiempo_Antes, datos$Tiempo_Despues, paired = TRUE)
+```
+# Paso 5: La Decisión Final (Interpretación)
+
+Tras verificar el supuesto de normalidad en las diferencias mediante la prueba de Shapiro-Wilk ($p = 0.3499$), se procedió a realizar una prueba t de Student para muestras pareadas. A un nivel de significación del 5%, se rechaza la hipótesis nula ($p = 2.2e-16$). Existe evidencia estadística para afirmar que el entrenamiento produce un cambio significativo en el tiempo de respuesta de los analistas. En promedio, los analistas redujeron su tiempo de detección en 20.95 segundos (con un intervalo de confianza del 95% entre 19.4204 y 22.4796 segundos).
+
+
+
+
+
+

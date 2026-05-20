@@ -366,7 +366,46 @@ tiempo (en segundos) que tardan 20 analistas en identificar un ataque de
 phishing en el sistema antes de usar el simulador, y luego midieron a
 los mismos 20 analistas después de completar un mes de
 entrenamiento.</h5>
+<p>Los datos están en un archivo llamado
+<code>tiempos_phishing.csv</code> con tres columnas: Analista (del 1 al
+20), Tiempo_Antes y Tiempo_Despues.</p>
 </div>
+<div id="pregunta-existe-evidencia-estadística-para-afirmar-que-el-entrenamiento-produjo-un-cambio-en-el-tiempo-de-detección-de-los-analistas" class="section level3">
+<h3><em>Pregunta:</em> ¿Existe evidencia estadística para afirmar que el
+entrenamiento produjo un cambio en el tiempo de detección de los
+analistas?</h3>
+<hr />
+</div>
+</div>
+<div id="paso-1-el-escaneo-del-diseño-la-trampa-revelada" class="section level1">
+<h1>Paso 1: El Escaneo del Diseño (La trampa revelada)</h1>
+<p>Aquí es donde usas tu árbol de decisión mental buscando las “palabras
+clave”:</p>
+<ol style="list-style-type: decimal">
+<li>Variable Respuesta: Tiempo en segundos (Numérica continua).</li>
+<li>Grupos: Antes y Después (2 mediciones).</li>
+<li>Relación: ¡Atención aquí! El enunciado dice que se midió a “los
+mismos 20 analistas”. Esto significa que el dato de Juan “Antes” está
+amarrado al dato de Juan “Después”. No son grupos independientes; son
+muestras pareadas (o dependientes).</li>
+</ol>
+<p>———&gt; Ruta en tu árbol: Variable numérica -&gt; 2 grupos -&gt;
+Muestras Pareadas.</p>
+</div>
+<div id="paso-2-las-hipótesis-el-concepto-de-la-diferencia" class="section level1">
+<h1>Paso 2: Las Hipótesis (El concepto de la “Diferencia”)</h1>
+<p>Cuando las muestras son pareadas, a la estadística no le importa
+cuánto se demoró Juan antes y cuánto después de forma aislada. Le
+importa la diferencia entre ambos tiempos (Antes menos Después).</p>
+<ul>
+<li><span class="math inline">\(H_0\)</span> (Hipótesis Nula): El
+entrenamiento no tiene efecto. La diferencia media de tiempos es cero.
+(<span class="math inline">\(\mu_{diferencia} = 0\)</span>)</li>
+<li><span class="math inline">\(H_A\)</span> (Hipótesis Alternativa): El
+entrenamiento sí produce un cambio. La diferencia media de tiempos es
+distinta de cero. (<span class="math inline">\(\mu_{diferencia} \neq
+0\)</span>)</li>
+</ul>
 </div>
 
 
