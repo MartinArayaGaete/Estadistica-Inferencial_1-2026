@@ -1,0 +1,173 @@
+---
+title: "PEPractica_1"
+author: "Martín Araya"
+date: "2026-05-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)    # Para manipular datos (filtrar, agrupar, mutar).
+library(ggpubr)   # Para generar gráficos rápidamente (histogramas, boxplots).
+library(car)      # Contiene la prueba de Levene para varianzas.
+```
+**Las Pruebas Paramétricas (Ej. t de Student, ANOVA):**
+Operan bajo la asunción estricta de que los datos provienen de una población con una forma geométrica específica: la **Distribución Normal** (la clásica curva de campana). 
+Se llaman "paramétricas" porque calculan probabilidades basándose en los **parámetros** de esa campana: la media ($\mu$) y la varianza ($\sigma^2$). 
+*   **El problema lógico:** Si graficas los tiempos de latencia de una red y en lugar de una campana simétrica ves que la mayoría de los datos se agrupan en valores bajos con una cola larguísima hacia la derecha (asimetría), calcular la media aritmética pierde sentido. La media será arrastrada por los valores atípicos. Si aplicas una prueba paramétrica aquí, el resultado será ruido matemático.
+
+**Las Pruebas No Paramétricas (Ej. Wilcoxon, Kruskal-Wallis):**
+Son el plan de contingencia. Se usan cuando los datos fallan miserablemente en tener forma de campana (no hay normalidad) o cuando la escala de medición es solo un orden (ordinal), como una encuesta de "Malo, Regular, Bueno".
+*   **La solución algorítmica:** Como no pueden confiar en la media aritmética, estas pruebas destruyen la magnitud del dato original. Si tienes tiempos de 10 ms, 12 ms y 500 ms, el algoritmo no paramétrico los convierte en posiciones (rangos): 1°, 2° y 3°. Trabajar con la posición relativa anula el impacto destructivo del valor atípico de 500 ms.
+
+---
+
+### 3. El Árbol de Decisión (Cómo abordar cualquier pregunta de la PEP)
+
+Cada ejercicio en tu PEP te exigirá contrastar una hipótesis. El flujo de trabajo estricto es el siguiente:
+
+#### Paso 1: Formular Hipótesis
+La **Hipótesis Nula ($H_0$)** es siempre la postura conservadora, el status quo. Significa que "no hay efecto", "no hay diferencia" o "todo es igual". 
+La **Hipótesis Alternativa ($H_A$)** es lo que sospechas que está ocurriendo realmente. "El algoritmo A es más rápido que el B" o "Existe una diferencia en la memoria consumida".
+
+#### Paso 2: Verificar Condiciones (El Control de Calidad)
+Antes de elegir la prueba, debes auditar los datos. Si te saltas esto y aplicas una prueba a ciegas, repruebas.
+1.  **Independencia:** ¿Los datos del grupo A afectan a los del grupo B? Si son servidores distintos operando de forma aislada, son independientes. Si es el *mismo* servidor evaluado antes y después de un parche, son muestras **pareadas** (o correlacionadas)[cite: 1, 4].
+2.  **Normalidad:** Usas la prueba de Shapiro-Wilk (`shapiro.test()`).
+    *   *Casuística:* $H_0$ de Shapiro asume que la distribución es normal. Si el valor $p$ arrojado es mayor al nivel de significación (usualmente $\alpha = 0.05$), fallas en rechazar $H_0$; asumes que la curva es una campana válida. Si $p < 0.05$, la normalidad se descarta y te ves obligado a usar métodos no paramétricos.
+3.  **Homocedasticidad (Igualdad de Varianzas):** Solo se exige al comparar dos o más grupos independientes (ANOVA o t de Student tradicional). Se evalúa con la prueba de Levene (`leveneTest()`). Si las varianzas son drásticamente distintas, el modelo paramétrico colapsa.
+
+#### Paso 3: Ejecución de la Prueba y Decisión Lógica
+Supongamos que evalúas dos topologías de red independientes. Verificaste que los tiempos de respuesta son normales. Procedes con la prueba paramétrica $t$ de Student.
+R te escupirá un **valor p**. 
+
+**¿Qué es el valor p?**
+Es la probabilidad de obtener los datos que estás viendo en tu pantalla *asumiendo que la Hipótesis Nula ($H_0$) fuera absoluta y perfectamente cierta*. 
+
+**Casuística de Conclusión:**
+Fijas tu umbral de tolerancia al error, llamado Nivel de Significación ($\alpha$). En ingeniería suele ser 0.05 (5% de margen de error).
+*   **Si $p < \alpha$ (Ej. $p = 0.01$):** Es altamente improbable obtener estos datos si las topologías fueran iguales. La evidencia destruye el status quo. **Rechazas $H_0$ a favor de $H_A$**. Concluyes que existe una diferencia significativa en los tiempos de respuesta.
+*   **Si $p \ge \alpha$ (Ej. $p = 0.35$):** Hay un 35% de probabilidad de ver esta diferencia solo por azar. No es evidencia suficiente para afirmar un cambio. **Fallas en rechazar $H_0$**. Concluyes que no hay evidencia para asegurar que una topología es mejor que la otra.
+
+---
+
+
+## Enunciado 1
+####Contexto: 
+Un equipo de desarrollo web quiere saber si el tiempo de carga de su página de inicio (en milisegundos) varía dependiendo del navegador que usen los clientes. Han tomado una muestra aleatoria de 40 sesiones usando Google Chrome y 40 sesiones usando Mozilla Firefox en computadoras con características idénticas.
+Los datos están en un archivo llamado tiempos_carga.csv que contiene dos columnas: Navegador (Chrome, Firefox) y Tiempo (numérico continuo).
+
+####Pregunta: ¿Existe evidencia estadística para afirmar que el tiempo de carga es distinto entre ambos navegadores?
+
+Lo que dice el texto                      Lo que significa estadísticamente               Consecuencia en tu código
+
+"tiempo de carga... en milisegundos"      Variable respuesta Numérica Continua.           Vamos a comparar medias (promedios) o medianas.
+
+"Google Chrome" y "Mozilla Firefox"       Variable categórica con 2 niveles (grupos).     El problema es de 2 grupos.
+
+"40 sesiones en Chrome y 40 en Firefox"   Grupos independientes (una sesión de Chrome     Necesitamos una prueba para muestras independientes (no pareadas).
+                                          no es la misma que la de Firefox).             
+
+
+---
+
+Paso 1: El Escaneo del Diseño (100% Mental)
+Lees el enunciado y defines tres cosas mirando tu árbol de decisión:
+
+Variable Respuesta: Tiempo de carga (Numérica continua).
+
+Grupos: Chrome y Firefox (2 grupos).
+
+Relación: Independientes (sesiones distintas).
+Ruta en tu árbol: Variables numéricas -> 2 grupos -> (Falta verificar normalidad).
+
+
+Paso 2: Las Hipótesis (Antes de tocar el código)
+Definimos qué estamos buscando.
+
+$H_0$ (Hipótesis Nula): El tiempo medio de carga es igual en ambos navegadores. ($\mu_{Chrome} = \mu_{Firefox}$)
+$H_A$ (Hipótesis Alternativa): El tiempo medio de carga es distinto entre ambos navegadores. ($\mu_{Chrome} \neq \mu_{Firefox}$)
+
+Paso 3: La Auditoría de Datos (El Código en R)
+Aquí abres tu RStudio. Vamos a cargar los datos y preguntarle a R si cumplen la forma de campana (Normalidad).
+```{r}
+# 1. Cargamos las librerías necesarias al principio
+library(dplyr) # Para filtrar datos fácilmente
+library(car)   # Por si necesitamos la prueba de Levene después
+
+# 2. Leemos el archivo. 
+# Usamos stringsAsFactors para que R entienda que "Chrome" y "Firefox" son categorías.
+datos <- read.csv("tiempos_carga.csv", stringsAsFactors = TRUE)
+
+# 3. Filtramos los datos para separar los tiempos de cada navegador
+# La función filter() de dplyr es la forma más limpia de hacerlo.
+datos_chrome <- filter(datos, Navegador == "Chrome")
+datos_firefox <- filter(datos, Navegador == "Firefox")
+
+# 4. PRUEBA DE NORMALIDAD (Shapiro-Wilk)
+# Le pasamos solo la columna "Tiempo" de cada grupo filtrado.
+shapiro.test(datos_chrome$Tiempo)
+shapiro.test(datos_firefox$Tiempo)
+```
+##### Cómo memorizar la lectura de Shapiro-Wilk:
+###### La regla del 0.05: Si el p-value que te arroja R es $\ge 0.05$, R te está diciendo: "Todo bien, es normal". Si es $< 0.05$, te dice: "Alerta, no es normal".
+
+Paso 4: La Bifurcación (Elegir la prueba final)
+Dependiendo de lo que arrojó el Paso 3, tomas un camino u otro en tu árbol.
+
+CAMINO A: Si AMBOS grupos fueron normales (Chrome: p-value = 0.661, Firefox: p-value = 0.3713, Si $p \ge 0.05 \rightarrow$ El grupo es Normal) (Paramétrico)
+Si son normales, la teoría exige revisar la "Homocedasticidad" (si las varianzas son iguales) antes de hacer la prueba t de Student.
+```{r}
+# Prueba de Levene (Solo si hubo normalidad)
+# Se lee: Tiempo en función (~) del Navegador.
+leveneTest(Tiempo ~ Navegador, data = datos)
+
+# Si Levene arroja p >= 0.05 (Varianzas IGUALES), ejecutas:
+t.test(Tiempo ~ Navegador, data = datos, var.equal = TRUE)
+
+# Si Levene arroja p < 0.05 (Varianzas DISTINTAS), ejecutas (Prueba de Welch):
+# t.test(Tiempo ~ Navegador, data = datos, var.equal = FALSE)
+```
+*t = -4.4726, df = 78, p-value = 2.592e-05*   <-- [ELEMENTO 1: El p-value]
+*95 percent confidence interval: *            <-- [ELEMENTO 2: El Intervalo de Confianza]
+ *-139.43606  -53.53894*
+ *sample estimates:*                           <-- [ELEMENTO 3: Las Estimaciones del Grupo]
+ *mean in group Chrome mean in group Firefox *
+             *1260.320              1356.807*
+ 
+
+CAMINO B: Si AL MENOS UNO no fue normal (No Paramétrico)
+Si Shapiro falló en Chrome, en Firefox, o en ambos, abandonas la t de Student y usas la prueba basada en medianas/rangos. No necesitas calcular Levene aquí.
+```{r}
+# Prueba de Mann-Whitney (Wilcoxon para muestras independientes)
+## no se escribe paired = FALSE. R ya sabe que son independientes. Cuando se usa la notación de "fórmula" (el símbolo ~), R asume automáticamente que los grupos son independientes
+# wilcox.test(Tiempo ~ Navegador, data = datos)
+```
+
+
+### 1 El p-value (La decisión matemática)
+Volviendo a el t.test(), arroja que p-value = 2.592e-05, o sea, 0.00002592, lo cual es mucho menor que 0.05 ($p < 0.05$), la decisión matemática es Rechazar la Hipótesis Nula ($H_0$).
+
+-> La idea de que _"ambos navegadores cargan a la misma velocidad"_ queda totalmente descartada. La diferencia encontrada no es por azar.
+
+ mean in group Chrome mean in group Firefox 
+             1260.320              1356.807 
+
+### 2 Las Estimaciones Muestrales (La realidad física) nos dice;
+
+`mean in group Chrome: 1260.320` (Chrome promedia ~1260 milisegundos).
+
+`mean in group Firefox: 1356.807` (Firefox promedia ~1356 milisegundos).
+
+Traducción: En la muestra, Chrome es notablemente más rápido que Firefox (tiene menos tiempo de carga).
+
+### 3 El Intervalo de Confianza del 95% (La precisión)
+R da un rango:  `-139.43606` to `-53.53894.`
+
+- Esto mide la diferencia exacta entre Chrome y Firefox en la población real ($Chrome - Firefox$).
+- R está diciendo: "No puedo darte un número exacto, pero tengo un 95% de certeza de que Chrome es entre 53.5 y 139.4 milisegundos más rápido que Firefox".
+- Como ambos números son negativos (no incluyen el número $0$ entremedio), confirma al 100% que el primer grupo (Chrome) es significativamente menor que el segundo (Firefox). Si el intervalo cruzara por el cero (ej. de -50 a +20), significaría que no hay diferencias claras.
+
+
+#### Conclusión: > Tras verificar los supuestos de normalidad mediante la prueba de Shapiro-Wilk ($p \ge 0.05$ en ambos grupos) y homogeneidad de varianzas mediante la prueba de Levene ($p = 0.2385$), se procedió a realizar una prueba t de Student para muestras independientes con varianzas iguales.A un nivel de significación del 5% ($\alpha = 0.05$), se rechaza la hipótesis nula debido a que el valor $p$ obtenido es significativamente menor ($p = 2.592 \times 10^{-5}$). Por lo tanto, existe evidencia estadística robusta para afirmar que el tiempo medio de carga difiere entre ambos navegadores. Específicamente, Google Chrome presenta un tiempo medio de carga menor ($1260.32$ ms) en comparación con Mozilla Firefox ($1356.81$ ms).

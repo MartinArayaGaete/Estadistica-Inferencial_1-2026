@@ -1,0 +1,13 @@
+---
+title: "PEPractica_2"
+author: "Martin Araya"
+date: "2026-05-20"
+output: html_document
+---
+## Contexto: 
+##### Una empresa de ciberseguridad quiere saber si su nuevo simulador de entrenamiento mejora la velocidad de sus analistas. Han registrado el tiempo (en segundos) que tardan 20 analistas en identificar un ataque de phishing en el sistema antes de usar el simulador, y luego midieron a los mismos 20 analistas después de completar un mes de entrenamiento.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
