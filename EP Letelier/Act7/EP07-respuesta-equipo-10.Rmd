@@ -1,0 +1,389 @@
+---
+title: "EP07-respuesta-equipo-10"
+author: "Grupo 10"
+date: "2026-05-08"
+output: html_document
+---
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+if(!require(dplyr)) install.packages("dplyr") #Para filtrar/leer excel
+if(!require(tidyr)) install.packages("tidyr")
+if(!require(ggplot2)) install.packages("ggplot2") #Para graficar
+if(!require(ggpubr)) install.packages("ggpubr")
+if(!require(DT)) install.packages("DT")
+if(!require(kableExtra)) install.packages("kableExtra") #Para crear la tabla
+if(!require(pwr)) install.packages("pwr")
+if(!require(tidyverse)) install.packages("tidyverse")
+if(!require(rcompanion)) install.packages("rcompanion")
+if(!require(RVAideMemoire)) install.packages("RVAideMemoire")
+if(!require(ez)) install.packages("ez")
+if(!require(nlme)) install.packages("nlme")
+if(!require(emmeans)) install.packages("emmeans")
+if(!require(pROC)) install.packages("pROC")
+if(!require(caret)) install.packages("caret")
+if(!require(leaps)) install.packages("leaps")
+if(!require(car)) install.packages("car")
+if(!require(plotly)) install.packages("plotly")
+if(!require(BSDA)) install.packages("BSDA")
+if(!require(TeachingDemos)) install.packages("TeachingDemos")
+if(!require(DescTools)) install.packages("DescTools")
+```
+
+---
+
+## Contexto
+
+En el trabajo de título de una estudiante del DIINF se reportan tiempos de ejecución (en milisegundos) y la cercanía con la solución óptima (en por ciento) de la mejor solución encontrada con tres versiones de un algoritmo genético para resolver instancias del problema del vendedor viajero disponibles en repositorios públicos. Ahora debe enfrentar el análisis de estos datos, por que está solicitando ayuda de las y los estudiantes de Estadística Inferencial.
+
+---
+
+## Preguntas
+
+1. Observando los datos, la memorista sospecha que hay diferencias significativas en el tiempo de ejecución entre las versiones B y C del algoritmo cuando las instancias tienen 60 o más nodos. ¿Los datos respaldan la intuición de la memorista?
+
+Para responder, filtren los datos para tener las instancias con 60 o más nodos y seleccionen las columnas de los tiempos de ejecución de las versiones B y C en formato ancho. Usando como semilla el valor 31, obtenga muestras aleatorias independientes de 23 tiempos registrados por la versión B y 21 tiempos registrados por la versión C del algoritmo. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar pruebas ómnibus y post-hoc según corresponda) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.
+
+R:
+
+$H_0$: No existen diferencias significativas entre los tiempos de ejecución de las versiones B y C.
+
+$H_A$: Existen diferencias significativas entre los tiempos de ejecución de las versiones B y C.
+
+```{r}
+# Se leen los datos
+datos = read.csv2("EP07 Datos.csv", stringsAsFactors = TRUE, header = TRUE, sep = ",")
+
+
+# Conversiones numericas
+datos$n.nodos <- as.numeric(datos$n.nodos)
+
+datos$tiempo.A <- as.numeric(datos$tiempo.A)
+datos$tiempo.B <- as.numeric(datos$tiempo.B)
+datos$tiempo.C <- as.numeric(datos$tiempo.C)
+
+datos$mejor.A <- as.numeric(datos$mejor.A)
+datos$mejor.B <- as.numeric(datos$mejor.B)
+datos$mejor.C <- as.numeric(datos$mejor.C)
+
+# Filtrar datos
+datos_mayor_sesenta1 <- datos %>%
+  filter(n.nodos >= 60)
+
+# Obtener tiempos
+tiempos_b1 <- datos_mayor_sesenta1$tiempo.B
+tiempos_c1 <- datos_mayor_sesenta1$tiempo.C
+
+# Semilla
+set.seed(31)
+
+# Muestras aleatorias
+muestra_b1 <- sample(tiempos_b1, size = 23)
+muestra_c1 <- sample(tiempos_c1, size = 21)
+
+# Dataframe conjunto
+tiempos_todos1 <- data.frame(
+  tiempo = c(muestra_b1, muestra_c1),
+  version = factor(c(rep("B",23), rep("C",21)))
+)
+```
+
+```{r}
+# Shapiro-Wilk poblaciones originales
+shapiro.test(tiempos_b1)
+shapiro.test(tiempos_c1)
+
+# Shapiro-Wilk muestras
+shapiro.test(muestra_b1)
+shapiro.test(muestra_c1)
+```
+Se puede ver que tiempos_b1 tiene un p-value = 1.254e-05, y tiempos_c1 tiene un p-value = 1.283e-05, por lo que podemos concluir que no poseen distribuciones normales, mientras que muestra_b1 y muestra_c1, tienen p-values de 0.263 y 0.229 respectivamente, por lo que al estar por sobre el nivel de significación de 0.05, podemos decir que poseen distribuciones normales.
+
+```{r}
+prueba_wilcox1 <- wilcox.test(muestra_b1, muestra_c1, paired = FALSE, exact = FALSE)
+
+print(prueba_wilcox1)
+```
+
+La prueba ha resultado significativa, obteniendo un p-value = 0.000424, por lo que podemos rechazar la hipótesis nula en favor de la alternativa, concluyendo que existen diferencias significativas entre los tiempos de ejecución de las versiones B y C.
+
+```{r}
+tiempos_todos1$rango <- rank(tiempos_todos1$tiempo)
+
+promedio_rangos1 <- aggregate(rango ~ version, data = tiempos_todos1, FUN = mean)
+
+print(promedio_rangos1)
+```
+
+La versión C presenta rangos promedio menores, por lo que tiende a ejecutar más rápido que la versión B.
+
+---
+
+2. La memorista también sospecha que, al comparar las mismas instancias de iguales características, las mejores soluciones encontradas por las versiones A y B tienen rendimientos distintos. ¿Estará en lo cierto?
+
+Para responder, filtren los datos para tener las instancias con 60 o más nodos y seleccionen las columnas con el mejor rendimiento de las versiones A y B en formato ancho. Usando como semilla el valor 16, obtengan una muestra aleatoria de 21 instancias. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar pruebas ómnibus y post-hoc según corresponda) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.
+
+R:
+
+$H_0$: No existen diferencias significativas entre los rendimientos de las versiones A y B.
+
+$H_A$: Existen diferencias significativas entre los rendimientos de las versiones A y B.
+
+```{r}
+# Filtrar datos
+datos_mayor_sesenta2 <- datos %>%
+  filter(n.nodos >= 60)
+
+# Semilla
+set.seed(16)
+
+# Selección de instancias
+muestra_instancias2 <- sample_n(datos_mayor_sesenta2, 21)
+
+# Obtener rendimientos
+rendimiento_a2 <- as.numeric(muestra_instancias2$mejor.A)
+rendimiento_b2 <- as.numeric(muestra_instancias2$mejor.B)
+
+# Diferencias
+diferencias2 <- rendimiento_a2 - rendimiento_b2
+
+# Revisar diferencias
+length(diferencias2)
+head(diferencias2)
+```
+
+```{r}
+hist(
+  diferencias2,
+  main = "Histograma diferencias A-B",
+  col = "lightblue"
+)
+```
+
+```{r}
+shapiro.test(diferencias2)
+```
+Se verifica que los datos siguen una distribución normal, teniendo un p-value = 0.512
+
+```{r}
+prueba2 <- wilcox.test(rendimiento_a2, rendimiento_b2, paired = TRUE, exact = FALSE)
+
+print(prueba2)
+```
+
+Dado que el p-value es 0.498, no existe evidencia suficiente para afirmar diferencias significativas, aceptando la hipótesis nula.
+
+---
+
+3. La memorista sospecha que hay diferencias significativas en el tiempo de ejecución entre las versiones del algoritmo cuando las instancias de prueba tienen 60 o más nodos. ¿Los datos respaldan la intuición de la memorista?
+
+Para responder, filtren los datos para tener las instancias con 60 o más nodos y seleccionen las columnas con los tiempos de ejecución registrados (en formato ancho). Usando como semilla el valor 33, obtengan muestras aleatorias independientes de 14, 15 y 13 tiempos registrados por las versiones A, B y C, respectivamente. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar pruebas ómnibus y post-hoc según corresponda) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.
+
+
+R:
+
+Dado que se quiere comparar el tiempo promedio de ejecución de las 3 versiones, utilizando para ello muestras aleatorias independientes de distinto tamaño, lo mejor probablemente sea utilizar una prueba de ANOVA de una vía para muestras independientes.
+
+A partir de las sospechas de la memorista, podemos enunciar las siguientes hipótesis:
+
+$H_0$: El tiempo promedio de ejecución de las diferentes versiones del algoritmo cuando las instancias de prueba tienen 60 o más nodos. Matemáticamente hablando: $\mu_{A} = \mu_{B} = \mu_{C}$.
+
+$H_A$: El tiempo promedio de ejecución de las diferentes versiones del algoritmo cuando las instancias de prueba tienen 60 o más nodos, es dintinto para al menos 1 de las versiones. Matemáticamente hablando: $\exists$ $\mu_i \land \mu_j$ $|$ $\mu_i \neq \mu_j$.
+
+```{r}
+# Filtro los datos con 60 o mas nodos
+datos_mayor_sesenta3 <- datos %>% filter(n.nodos >= 60)
+
+# Obtengo los tiempos de ejecucion
+tiempos_a3 <- datos_mayor_sesenta3$tiempo.A
+tiempos_b3 <- datos_mayor_sesenta3$tiempo.B
+tiempos_c3 <- datos_mayor_sesenta3$tiempo.C
+
+# Los unifico los datos originales
+originales_todos3 <- data.frame(tiempo = c(tiempos_a3, tiempos_b3, tiempos_c3),
+                          version = factor(c(rep("A", 150),
+                                           rep("B", 150),
+                                           rep("C", 150)))) |> 
+               mutate(instancia = factor(1:n())) |> 
+               mutate(version = factor(version))
+
+# Establezco la semilla pedida
+set.seed(33)
+
+# Obtengo muestras aleatorias de A, B y C
+muestra_a3 <- sample(tiempos_a3, size = 14)
+muestra_b3 <- sample(tiempos_b3, size = 15)
+muestra_c3 <- sample(tiempos_c3, size = 13)
+
+# Los unifico en formato largo, ya que no tienen la misma cantidad de observaciones
+tiempos_todos3 <- data.frame(tiempo = c(muestra_a3, muestra_b3, muestra_c3),
+                          version = factor(c(rep("A", 14),
+                                           rep("B", 15),
+                                           rep("C", 13)))) |> 
+               mutate(instancia = factor(1:n())) |> 
+               mutate(version = factor(version))
+
+```
+
+Ahora se verifica que se cumplan las condiciones para poder utilizar la prueba ANOVA para muestras independientes, las cuales son: 
+
+- La variable tiempo es numérica discreta, y está medida en milisegundos, siendo una medición física, por lo que tiene escala de razón.
+
+- Las muestras fueron obtenidas de manera aleatoria e independiente desde las muestras originales. Existiendo distintas cantidades de datos por cada grupo, teniendo 14 para A, 15 para B, y 13 para C.
+
+- Se puede suponer razonablemente que las poblaciones de origen siguen una distribución normal:
+
+```{r}
+# Se elabora un grafico Q-Q de los datos originales
+paleta <- colorRampPalette(c("lightblue", "steelblue", "midnightblue"))(3)
+g1 <- ggqqplot(originales_todos3, x = "tiempo", y = "version", color = "version", alpha = 0.7, palette = paleta)
+
+g1 <- g1 + facet_wrap(~ version)
+g1 <- g1 + rremove("x.ticks") + rremove("x.text")
+g1 <- g1 + rremove("y.ticks") + rremove("y.text")
+g1 <- g1 + rremove("axis.title") + rremove("legend")
+print(g1)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+# Se elabora un grafico Q-Q para la muestras aleatorias
+paleta <- colorRampPalette(c("lightblue", "steelblue", "midnightblue"))(3)
+g2 <- ggqqplot(tiempos_todos3, x = "tiempo", y = "version", color = "version", alpha = 0.7, palette = paleta)
+
+g2 <- g2 + facet_wrap(~ version)
+g2 <- g2 + rremove("x.ticks") + rremove("x.text")
+g2 <- g2 + rremove("y.ticks") + rremove("y.text")
+g2 <- g2 + rremove("axis.title") + rremove("legend")
+print(g2)
+```
+
+```{r}
+# Se testean las muestras originales para comprobar distribucion normal
+shapiro.test(tiempos_a3)
+shapiro.test(tiempos_b3)
+shapiro.test(tiempos_c3)
+
+
+# Se testean las muestras aleatorias obtenidas
+shapiro.test(muestra_a3)
+shapiro.test(muestra_b3)
+shapiro.test(muestra_c3)
+```
+
+De acuerdo al gráfico podemos observar que ninguna de las muestras originales sigue una distribución normal, y tanto la muestra aleatoria de A como la de C siguen una curva extraña y distinta a la que se esperaría si tuvieran una distribución normal, mientras que B sí pareciera tener una distribución normal. Luego, con las pruebas de Shapiro, podemos  confirmar que ninguna de las muestras originales siguen una distribución normal, teniendo p-values de 2.389e-09, 1.254e-05 y 1.283e-05 para A, B y C respectivamente. Con las muestras aleatorias se obtienen resultados no tan similares, teniendo p-values de 0.002594, 0.9884 y 0.1571 para A, B y C respectivamente. Si no tuvieramos las muestras originales, podríamos pensar que B y C siguen distribuciones normales, pero como A no lo hace, no podríamos utilizar ANOVA igualmente, por lo que descartamos la posibilidad de utilizar dicha prueba y, en su lugar, utilizaremos la prueba de Kruskal, que requiere del cumplimiento de las siguientes condiciones:
+
+
+- La escala de la variable dependiente, que en este caso es el tiempo, es efectivamente ordinal.
+
+- Las observaciones son independientes entre sí.
+
+- La variable independiente, que en este caso son las versiones, tiene 3 niveles: A, B y C, por lo que cumple con tener a lo menos 2 niveles.
+
+
+Por lo tanto, al cumplirse todas las condiciones, procedemos a realizar la prueba de Kruskal:
+
+
+```{r}
+prueba_kruskal3 <- kruskal.test(tiempo ~ version, tiempos_todos3)
+
+print(prueba_kruskal3)
+```
+
+Luego de la prueba podemos ver que se obtiene un p-value = 0.01731, siendo menor al nivel de significancia de 0.05, por lo que se rechaza la hipótesis nula en favor de la alternativa, concluyendo que el tiempo promedio de ejecución de las diferentes versiones del algoritmo cuando las instancias de prueba tienen 60 o más nodos, es dintinto para al menos 1 de las versiones, lo que confirma la sospecha de la memorista.
+
+Ahora nos podría interesar saber cómo se relacionan estas versiones entre sí, por lo que se aplicará un procedimiento post-hoc, a pesar de que no se pide.
+
+```{r}
+post_hoc3 <- pairwise.wilcox.test(tiempos_todos3[["tiempo"]], tiempos_todos3[["version"]], p.adjust.method="holm", paired=FALSE, exact = FALSE)
+
+print(post_hoc3)
+```
+```{r}
+# Agrego una columna con los rangos para poder comparar 
+tiempos_todos3$rango <- rank(tiempos_todos3$tiempo)
+
+# Se calcula el rango promedio de cada versión
+promedio_rangos3 <- aggregate(rango ~ version, data = tiempos_todos3, FUN = mean)
+
+print(promedio_rangos3)
+```
+
+No existe una clara diferencia entre las versiones A y C, habiendo obtenido un p-value = 0.577, y tampoco hay una diferencia razonable entre A y B, teniendo un p-value = 0.127, en ambos casos el p-value es mayor que el nivel de significancia de 0.05. En el caso de B y C esto sí se cumple, ya que se obtuvo un p-value = 0.0083, por lo que hay diferencias notables entre ambos, y como el rango promedio de C, 17.384, es menor que el de B, 28.733, entonces podemos decir que la versión C es más eficiente que B.
+
+
+---
+
+4. La memorista también sospecha que, al comparar las mismas instancias con iguales características, las mejores soluciones encontradas por las diferentes versiones del algoritmo tienen rendimientos distintos. ¿Estará en lo cierto?
+
+Para responder, filtren los datos para tener las instancias con 60 o más nodos y seleccionen las columnas con los mejores rendimientos registrados. Usando como semilla el valor 33, obtengan una muestra aleatoria de 18 instancias. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar pruebas ómnibus y post-hoc según corresponda) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.
+
+R:
+
+Como los datos estan relacionados, se piensa que lo mejor sería utilizar ANOVA de una vía para muestras correlacionadas.
+
+Se plantean las siguientes hipótesis:
+
+$H_0$: En promedio, no existen diferencias entre los rendimientos de las diferentes versiones. Matemáticamente hablando: para todo $X, Y \in$ {A, B, C} $|$ $\mu_{X - Y}=0$
+
+$H_A$: La media de las diferencias en los rendimientos de las diferentes versiones es diferente en al menos un par de ellas. Matemáticamente hablando: existen $X, Y \in$ {A, B, C} $|$ $\mu_{X - Y} \neq 0$
+
+```{r}
+# Filtro los datos con 60 o mas nodos y selecciono las columnas de porcentaje
+datos_filtrados4 <- datos %>% filter(n.nodos >= 60)%>% select(instancia, mejor.A, mejor.B, mejor.C)
+
+# Establezco la semilla pedida
+set.seed(33)
+
+# Obtengo la muestra aleatoria
+muestra_instancias4 <- datos_filtrados4 %>% slice_sample(n = 18)
+
+# Los unifico en formato largo
+mejor_todos4 <- muestra_instancias4 %>% pivot_longer(cols = starts_with("mejor"), names_to = "version", values_to = "mejor") %>% mutate(version = factor(version), instancia = factor(instancia), mejor = as.numeric(as.character(mejor)))
+```
+
+Ahora se verifica que se cumplan las condiciones para poder utilizar la prueba ANOVA para muestras correlacionadas, las cuales son: 
+
+- La variable de porcentaje es numérica discreta, utilizando 2 decimales, teniendo una escala de razón consistente entre cada medición.
+
+- Las muestras fueron obtenidas de manera aleatoria e independiente.
+
+- Se puede suponer razonablemente que las poblaciones de origen siguen una distribución normal:
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+# Se elabora un grafico Q-Q para la muestras aleatorias
+paleta <- colorRampPalette(c("lightblue", "steelblue", "midnightblue"))(3)
+g3 <- ggqqplot(mejor_todos4, x = "mejor", y = "version", color = "version", alpha = 0.7, palette = paleta)
+
+g3 <- g3 + facet_wrap(~ version)
+g3 <- g3 + rremove("x.ticks") + rremove("x.text")
+g3 <- g3 + rremove("y.ticks") + rremove("y.text")
+g3 <- g3 + rremove("axis.title") + rremove("legend")
+print(g3)
+```
+
+En los gráficos se puede observar que las muestras no siguen distribuciones normales, por lo que se descarta inmediatamente el uso de ANOVA, y se opta por la prueba de Friedman, que no es muy aceptada. Sus condiciones son: 
+
+- La escala de la variable dependiente, en este caso mejor, que es porcentual, es ordinal.
+
+- Las observaciones son una muestra aleatoria e independiente de la población, de tamaño 18.
+
+- La variable independiente, la versión, es categórica y tiene efectivamente 3 niveles.
+
+Por lo que procedemos a hacer la prueba de Friedman:
+
+```{r}
+friedman.test(mejor ~ version | instancia, data = mejor_todos4)
+```
+
+Se obtuvo un p-value = 3.843e-05, que es menor que el nivel de significancia de 0.05, por lo que la prueba es significativa y se rechaza la hipótesis nula en favor de la alternativa, pudiendo concluir que la media de las diferencias en los rendimientos de las diferentes versiones es diferente en al menos un par de ellas. 
+
+
+```{r}
+post_hoc4 <- pairwise.wilcox.test(mejor_todos4$mejor, mejor_todos4$version, p.adjust.method = "holm", paired = TRUE)
+print(post_hoc4)
+```
+
+Se puede observar que todos los p-values son significativos, teniendo 2.3e-05, 0.02 y 0.02 entre mejor.A y mejor.B, mejor.A y mejor.C, y mejor.B y mejor.C respectivamente, pudiendo concluir que cada grupo es distinguible uno del otro.
+
+
+
+
