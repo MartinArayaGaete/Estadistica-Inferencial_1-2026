@@ -1,0 +1,249 @@
+---
+title: "EI-EP06-respuesta-equipo-10"
+author: "Grupo 10"
+date: "2026-05-06"
+output: html_document
+---
+
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+if(!require(dplyr)) install.packages("dplyr")
+if(!require(tidyr)) install.packages("tidyr")
+if(!require(ggplot2)) install.packages("ggplot2")
+if(!require(ggpubr)) install.packages("ggpubr")
+if(!require(DT)) install.packages("DT")
+if(!require(kableExtra)) install.packages("kableExtra")
+if(!require(pwr)) install.packages("pwr")
+if(!require(tidyverse)) install.packages("tidyverse")
+if(!require(rcompanion)) install.packages("rcompanion")
+if(!require(RVAideMemoire)) install.packages("RVAideMemoire")
+if(!require(ez)) install.packages("ez")
+if(!require(nlme)) install.packages("nlme")
+if(!require(emmeans)) install.packages("emmeans")
+if(!require(pROC)) install.packages("pROC")
+if(!require(caret)) install.packages("caret")
+if(!require(leaps)) install.packages("leaps")
+if(!require(car)) install.packages("car")
+if(!require(plotly)) install.packages("plotly")
+if(!require(BSDA)) install.packages("BSDA")
+if(!require(TeachingDemos)) install.packages("TeachingDemos")
+if(!require(DescTools)) install.packages("DescTools")
+```
+
+---
+
+## Contexto
+
+Un equipo de investigadores del área de interacción humano-información está estudiando si el área temática y el nivel de dificultad del problema de información influyen en el tiempo (en segundos) que toma un usuario en formular una consulta de búsqueda para resolver dicho problema. Para ello, han reclutado a un grupo de participantes voluntarios, asignados aleatoriamente a distintos grupos. Cada participante debe resolver tres problemas de información con diferentes niveles de dificultad: baja, media y alta. A su vez, cada grupo debe resolver problemas relacionados a una temática diferente. Los datos recolectados contemplan las siguientes variables:
+
+| Variable |                       Descripción                        |
+|----------|----------------------------------------------------------|
+|    id    |	Identificador único de cada participante                |
+|   area   |	Área temática de los problemas que el participante debe responder. Variable categórica con los niveles Arquitectura, Biología, Computación, Economía, Física, Leyes, Literatura, Matemáticas, Música, Pedagogía, Psicología, Química.                   |
+|dificultad|	Nivel de dificultad del problema resuelto. Variable categórica con los niveles Baja, Media y Alta.|
+|  tiempo  |	Tiempo, en segundos, que toma al participante formular la consulta.|
+
+---
+
+## Preguntas
+
+1. En este momento, los investigadores buscan determinar si existen diferencias en el tiempo que tardan los usuarios en formular consultas para problemas con diferente nivel de dificultad en el área de música.
+
+
+A partir de la pregunta se pueden esbozar las siguientes hipótesis:
+
+$H_0$: En promedio, no hay diferencia en los tiempos que tardan los usuarios en formular consultas para problemas con diferente nivel de dificultad. Matemáticamente hablando, para todo $X, Y \in$ {Baja, Media, Alta} $|$ $\mu_{dX - Y}=0$.
+
+$H_A$: La media de las diferencias en los tiempos que tardan los usuarios en formular consultas para problemas con diferente nivel de dificultad es diferente en al menos un par de dificultades. Matemáticamente hablando, existen $X, Y \in$ {Baja, Media, Alta} $|$ $\mu_{dX - Y} \neq 0$
+
+```{r}
+# Se leen los datos
+datos = read.csv2("EP06 Datos.csv", stringsAsFactors = TRUE, header = TRUE, sep = ",")
+
+# Filtro para obtener el area musical 
+datos <- datos %>% filter(area == "Música")
+
+# Filtro de acuerdo a la dificultad
+datos_baja <- datos %>% filter(dificultad == "Baja")
+datos_baja <- datos_baja[, -c(1,2,3)]
+
+datos_media <- datos %>% filter(dificultad == "Media")
+datos_media <- datos_media[, -c(1,2,3)]
+
+datos_alta <- datos %>% filter(dificultad == "Alta")
+datos_alta <- datos_alta[, -c(1,2,3)]
+
+instancia <- factor(1:200)
+
+datos_todos <- data.frame(instancia, datos_baja, datos_media, datos_alta)
+
+datos_todos <- datos_todos |> pivot_longer( - instancia, names_to = "dificultad", values_to = "tiempo") |> mutate(dificultad = factor(dificultad))
+
+print(datos_todos)
+```
+
+Ahora se verifican las condiciones para poder aplicar ANOVA de una via para muestras correlacionadas, las cuales son:
+
+- La escala con que se mide la variable tiempo es numérica discreta, y está medida en segundos, por lo que no hay problemas de diferencia de escala entre cada medición.
+
+- Las observaciones son independientes al interior de cada muestra, y cada grupo cuenta con 200 observaciones.
+
+- Se debe suponer que las poblaciones de origen siguen una distribución normal. Para ello se verifica la normalidad de las muestras mediante gráficos y Shapiro test.
+
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+# Se elabora un gráfico Q-Q
+paleta <- colorRampPalette(c("lightblue", "steelblue", "midnightblue"))(3)
+g1 <- ggqqplot(datos_todos, x = "tiempo", y = "dificultad", color = "dificultad", alpha = 0.7, palette = paleta)
+
+g1 <- g1 + facet_wrap(~ dificultad)
+g1 <- g1 + rremove("x.ticks") + rremove("x.text")
+g1 <- g1 + rremove("y.ticks") + rremove("y.text")
+g1 <- g1 + rremove("axis.title") + rremove("legend")
+print(g1)
+```
+
+
+```{r}
+# Aplico Shapiro para cada grupo
+shapiro.test(datos_baja)
+shapiro.test(datos_media)
+shapiro.test(datos_alta)
+```
+De acuerdo a las pruebas de Shapiro las hipótesis nulas sobre la normalidad de cada conjunto de datos no pueden ser rechazadas, dado que los p-values para Baja, Media y Alta son 0.181, 0.662, 0.469 respectivamente, y son mayores al nivel de significación de 0.05. Sin embargo, lo que se observa en la gráfica Q-Q no deja tan claro esto, ya que hay bastantes datos que se salen o tocan los bordes esperados, por lo que tal vez sea conveniente usar un nivel de significación más exigente, como 0.01.
+
+- Finalmente queda por verificar que la matriz de varianzas-covarianzas es esférica, lo que establece que las varianzas de las diferencias entre todos los pares de niveles dentro del factor de medidas repetidas sean iguales, pero la prueba ezANOVA() ya se encarga de verificar esta condición automáticamente mediante la prueba de Mauchly, y aplicando los ajustes de Greenhouse-Geisser y Huynh-Feldt. 
+
+Ahora procedemos a aplicar la prueba ANOVA:
+
+```{r}
+# Se utiliza ezANOVA para 
+prueba_anova <- ezANOVA(data = datos_todos, dv = tiempo, wid = instancia, within = dificultad, detailed = TRUE)
+objeto_aov <- aov(tiempo ~ dificultad + Error(instancia/dificultad), data = datos_todos)
+
+print(prueba_anova)
+```
+
+Primero se verifica que el p-value obtenido para la prueba de esfericidad de Mauchly es de 0.716, siendo mayor al nivel de significación 0.05, por lo que es razonable suponer que la condición de esfericidad se cumple. Luego, la prueba ANOVA resulta significativa, pues el p-value obtenido es 2.483581e-58, siendo considerablemente menor al nivel de significación establecido con anterioridad, 0.01, por lo que podemos rechazar la hipótesis nula en favor de la alternativa, concluyendo que la media de las diferencias en los tiempos que tardan los usuarios en formular consultas para problemas con diferente nivel de dificultad es, efectivamente, diferente en al menos un par de dificultades.
+
+Por supuesto, ahora interesa saber cómo se relacionan estas diferencias, por lo que es necesario utilizar un procedimiento post-hoc que nos ayude a determinar dicha información. En este caso se utilizará una gráfica para obtener una aproximación gráfica, y posteriormente realizar un contraste de medias marginales estimadas, escogiendo este método, ya que nos otorga más detalles que pruebas tradicionales.
+
+```{r}
+# Creo el grafico con los datos
+g2 <- ezPlot(data = datos_todos, dv = tiempo, wid = instancia, within = dificultad, y_lab = "Tiempo promedio de resolución [s]", x = dificultad, x_lab = "Dificultad del problema musical")
+# Cambio los colores del grafico
+g2[["layers"]][[1]][["aes_params"]] <- list(colour = "steelblue1", alpha = 0.7)
+g2[["layers"]][[2]][["aes_params"]] <- list(colour = "steelblue3", alpha = 0.7)
+g2[["layers"]][[3]][["aes_params"]] <- list(colour = "steelblue4", alpha = 0.7)
+g2 <- g2 + ggtitle("Comparación post-hoc") + theme_pubr()
+
+print(g2)
+```
+
+De acuerdo a la aproximación gráfica se puede observar que la dificultad Alta claramente posee un promedio de tiempo de resolución más alto que el resto de las dificultades, mientras que aparentemente la dificultad Media pareciera tener un promedio más alto que la dificultad Baja. 
+
+```{r}
+# Se calculan las medias marginales estimadas 
+emm <- emmeans(objeto_aov, "dificultad")
+print(summary(emm, infer = TRUE, level = 0.99, null = mean(datos_todos[["tiempo"]])))
+```
+```{r}
+# Se contrastan las medias marginales estimadas
+post_hoc <- contrast(emm, method = "pairwise", level = 0.99, adjust = "tukey")
+print(summary(post_hoc, infer = TRUE))
+```
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+g3 <- plot(post_hoc, colors = "steelblue", alpha = 0.7)
+g3 <- g3 + xlim(c(-5, 17))
+g3 <- g3 + ggtitle("Post-hoc HSD de Tukey") + ylab("Pares de dificultades")
+g3 <- g3 + xlab("Diferencias en tiempos de resolución para las mismas instancias")
+g3 <- g3 + geom_vline(xintercept = 0, colour = "steelblue4", linetype = "dashed")
+g3 <- g3 + theme_pubr()
+g3 <- g3 + theme(axis.text.y = element_text(size = rel(0.75)), axis.title.y = element_text(margin = margin(r = 15)))
+
+print(g3)
+```
+
+Al contrastar las medias marginales estimadas mediante contrast() se puede concluir que la dificultad Alta tiene la media de tiempo de resolución más alta, teniendo una diferencia de 13.9 y 11.78 con Baja y Media respectivamente, teniendo en ambos casos un p-value menor a 0.0001. En el caso de la diferencia entre Baja y Media se obtiene -2.12, con un p-value de 0.0168, al borde del nivel de significancia definido previamente de 0.01. Por lo tanto, podemos concluir que Alta posee, en efecto, el promedio de resolución más alto, mientras que para Media y Baja no tenemos pruebas concluyentes sobre sus relaciones dado que el p-value obtenido cae muy cerca del nivel de significancia.
+
+
+---
+
+
+2. Propongan una pregunta de investigación relacionada al uso de asistentes de programación basados en inteligencia artificial que necesite ser analizado por medio de un procedimiento ANOVA para muestras correlacionadas con un factor que tenga entre 4 y 6 niveles. Luego invente una población para cada grupo con 5.000 datos, asegurando que cumpla las suposiciones de esta prueba.
+
+Se plantea la siguiente pregunta de investigación:
+
+¿Existen diferencias significativas en el tiempo que tardan estudiantes de programación en resolver ejercicios utilizando distintos asistentes de programación basados en inteligencia artificial?
+
+Se utilizará un ANOVA para muestras correlacionadas debido a que los mismos 5000 estudiantes resolverán ejercicios utilizando cada uno de los asistentes de programación. Por lo tanto, las mediciones obtenidas para cada nivel del factor están relacionadas entre sí.
+
+Variable numérica: Tiempo que tardan en resolver ejercicios, medido en minutos.
+
+Factor: Tipos de IA, con los siguientes niveles: ChatGPT, Copilot, Gemini, Claude, Sin IA.
+
+A partir de la pregunta se plantean las siguientes hipótesis:
+
+$H_0$: En promedio, no existen diferencias significativas en los tiempos de resolución utilizando los distintos asistentes de programación basados en inteligencia artificial.
+
+$H_A$: Existe al menos un par de asistentes cuyos tiempos promedio de resolución son diferentes.
+
+```{r}
+# Se define una semilla para reproductibilidad
+set.seed(123)
+
+# Tamaño de cada grupo de datos
+n <- 5000
+
+# Se generan distribuciones normales para cada grupo
+ChatGPT <- rnorm(n, mean = 18, sd = 3)
+Copilot <- rnorm(n, mean = 20, sd = 3)
+Gemini  <- rnorm(n, mean = 21, sd = 3)
+Claude  <- rnorm(n, mean = 19, sd = 3)
+Sin_IA  <- rnorm(n, mean = 27, sd = 3)
+
+id = factor(1:n)
+
+# Se construye el dataset
+datos_ia <- data.frame(id, ChatGPT, Copilot, Gemini, Claude, Sin_IA)
+
+print(head(datos_ia))
+```
+
+Ahora se debe comprobar que se cumplen las condiciones necesarias para poder aplicar ANOVA para muestras correlacionadas:
+
+- La variable tiempo es numérica discreta y está medida en minutos, por lo que no existen problemas de escala entre mediciones.
+
+- Las observaciones entre distintos estudiantes son independientes. Sin embargo, cada estudiante fue evaluado utilizando todos los asistentes de programación, por lo que las mediciones están correlacionadas dentro de cada individuo, justificando el uso de ANOVA para muestras correlacionadas.
+
+- Las muestras siguen una distribución normal, dado que se utilizó rnorm() para generar los datos. Cabe destacar que además se asignaron medias menores a los asistentes basados en IA, debido a que se espera que estos reduzcan el tiempo de resolución de ejercicios, mientras que el grupo "Sin IA" presenta un promedio mayor al no contar con apoyo automatizado. Asimismo, las desviaciones estándar fueron definidas iguales para todos los grupos, con sd = 3, manteniendo una dispersión similar entre los niveles del factor.
+
+- Finalmente queda por verificar que la matriz de varianzas-covarianzas sea esférica, pero la prueba ezANOVA() ya se encarga de verificar esta condición.
+
+```{r}
+# Se transforman los datos a formato largo
+datos_largos <- datos_ia %>% pivot_longer(cols = -id, names_to = "asistente", values_to = "tiempo")
+
+datos_largos$asistente <- as.factor(datos_largos$asistente)
+
+print(head(datos_largos))
+```
+
+```{r}
+# Se genera un gráfico de comparación
+g4 <- ezPlot(data = datos_largos, dv = tiempo, wid = id, within = asistente, x = asistente, y_lab = "Tiempo promedio [minutos]", x_lab = "Asistente de IA")
+g4 <- g4 + theme_pubr()
+
+print(g4)
+```
+
+```{r}
+# Se aplica ANOVA para muestras correlacionadas
+anova_ia <- ezANOVA(data = datos_largos, dv = tiempo, wid = id, within = asistente, detailed = TRUE)
+
+print(anova_ia)
+```
+
+De acuerdo al resultado obtenido mediante ANOVA para muestras correlacionadas, se rechaza la hipótesis nula, concluyendo que existen diferencias significativas en los tiempos promedio de resolución entre al menos dos asistentes de programación basados en inteligencia artificial.
+
+

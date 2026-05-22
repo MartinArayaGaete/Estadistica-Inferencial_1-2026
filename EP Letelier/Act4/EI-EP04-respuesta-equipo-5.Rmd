@@ -1,0 +1,265 @@
+---
+title: "Actividad 4"
+author: "Equipo 5"
+date: "2026-04-16"
+output: html_document
+---
+
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+if(!require(dplyr)) install.packages("dplyr") #Para filtrar/leer excel
+if(!require(tidyr)) install.packages("tidyr")
+if(!require(ggplot2)) install.packages("ggplot2") #Para graficar
+if(!require(ggpubr)) install.packages("ggpubr")
+if(!require(ggmosaic)) install.packages("ggmosaic")
+if(!require(DT)) install.packages("DT")
+if(!require(kableExtra)) install.packages("kableExtra") #Para crear la tabla
+if(!require(pwr)) install.packages("pwr")
+if(!require(tidyverse)) install.packages("tidyverse")
+if(!require(rcompanion)) install.packages("rcompanion")
+if(!require(RVAideMemoire)) install.packages("RVAideMemoire")
+if(!require(ez)) install.packages("ez")
+if(!require(nlme)) install.packages("nlme")
+if(!require(emmeans)) install.packages("emmeans")
+if(!require(pROC)) install.packages("pROC")
+if(!require(caret)) install.packages("caret")
+if(!require(leaps)) install.packages("leaps")
+if(!require(car)) install.packages("car")
+if(!require(plotly)) install.packages("plotly")
+if(!require(BSDA)) install.packages("BSDA")
+if(!require(TeachingDemos)) install.packages("TeachingDemos")
+```
+
+---
+
+## Contexto
+
+Ya conocemos bien el contraste de hipótesis sobre la media de una población o las diferencia entre las medias de dos poblaciones. Incluso tenemos herramientas para buscar un nivel de significación (α) y un poder estadístico (1 - β) específicos para estas pruebas.
+
+Además vimos el contraste de hipótesis para determinar el valor de la proporción de elementos que cumplen una cierta característica en una población, o la diferencia de las proporciones de dos poblaciones. Aquí también vimos herramientas para buscar un nivel de significación o un nivel de poder estadístico para estas pruebas.
+
+Ahora debemos practicar métodos que nos ayuden a contrastar hipótesis, más débiles que en las pruebas anteriores, cuando las condiciones para aplicar con validez las pruebas estudiadas hasta ahora no se cumplen del todo. Partiremos con las proporciones.
+
+---
+
+## Preguntas
+
+
+1. Un hotel está implementando un nuevo protocolo de limpieza para mejorar la calidad de servicio y la satisfacción de sus huéspedes. Para evaluar la efectividad de este protocolo, se seleccionaron aleatoriamente 25 habitaciones y se aplicó el protocolo de limpieza antiguo y nuevo de forma alternada. Después de la primera limpieza, se evaluó la calidad de limpieza de cada habitación. Luego, después de la segunda limpieza con el protocolo alternativo, se volvió a evaluar la calidad de limpieza. Los resultados se presentan a continuación:
+
+ - 4 habitaciones mostraron una calidad de limpieza baja en ambas ocasiones.
+ 
+ - 5 habitaciones con calidad de limpieza baja con el protocolo antiguo mostraron una mejora con el nuevo.
+ 
+ - 9 habitaciones mantuvieron una alta calidad de limpieza con ambos protocolos.
+ 
+ - 7 habitaciones mostraron una alta calidad de limpieza con el protocolo antiguo, pero una disminución con el protocolo nuevo.
+ 
+¿Hay evidencia de que el nuevo protocolo de limpieza haya tenido un efecto significativo en la calidad de limpieza de las habitaciones del hotel?
+
+
+R: Para seleccionar la prueba, primero haremos un análisis: La prueba utiliza una característica con respuesta dicotómica, dado que la calidad de limpieza tiene solo dos niveles: "baja" y "alta", que se mide en dos ocasiones: "antiguo" y "nuevo", para el mismo grupo de casos. Además se busca determinar si ocurre un cambio significativo entre las mediciones. A partir de lo anterior, la prueba más adecuada es la prueba de McNemar. 
+
+Primero escribimos las hipótesis que queremos comprobar en el estudio: 
+
+$H_0$: No existe un efecto significativo en la calidad de limpieza luego de implementar el nuevo protocolo de limpieza
+
+$H_A$: Existe un efecto significativo en la calidad de limpieza luego de implementar el nuevo protocolo de limpieza
+  
+Y considerando un nivel de confianza del 95%, llevaremos a cabo la prueba mcnemar.test:
+
+```{r}
+habitaciones <- seq(1:25)
+protocoloAntiguo <- c(rep("Baja", 4), rep("Baja", 5), rep("Alta", 9), rep("Alta", 7))
+protocoloNuevo<- c(rep("Baja", 4), rep("Alta", 5), rep("Alta", 9), rep("Baja", 7))
+
+
+datos <- data.frame(habitaciones , protocoloAntiguo, protocoloNuevo)
+tabla <- table(protocoloAntiguo, protocoloNuevo)
+print(tabla)
+
+prueba_1 <- mcnemar.test(tabla)
+print(prueba_1)
+
+```
+
+Asumiendo un nivel de significancia es de 0.05 y que el resultado de la prueba entregó que p = 0.7728 podemos concluir que no hay evidencia suficiente para creer que el nuevo protocolo de limpieza haya tenido un efecto significativo en la calidad de limpieza. Por lo que se acepta la hipótesis nula.
+
+---
+
+2. Una agencia de marketing desea determinar si hay una diferencia significativa en la efectividad de tres estrategias publicitarias utilizadas para promocionar un nuevo producto. Para ello, se ha recopilado información de personas que fueron expuestas a las tres estrategias publicitarias, registrando si mostraron una aceptación (A) o rechazo (R) a cada una de ellas.
+¿Qué puede concluir la agencia de marketing sobre la efectividad de las estrategias publicitarias para promover el nuevo producto?
+Indicación: obtenga la muestra de 50 personas a partir del archivo “EP04 Datos.csv” que se encuentra en el directorio compartido, usando la semilla 130.
+
+
+R: Para seleccionar la prueba, primero haremos un análisis de los datos: Se tienen variables independientes categóricas, que en este caso son las 3 estrategias publicitarias. 
+Los datos recopilados son de tipo binario ya que  solo hay dos opciones: Aceptación (A) o rechazo (R). También suponemos que las observaciones son independientes entre sí, ya que es una muestra aleatoria y la elección de un dato no influye en los demás. A partir de lo anterior la prueba más adecuada es la prueba Q de Cochran.
+
+Ahora crearemos las hipótesis que buscamos validar en este estudio:
+
+$H_0$: La proporción de "Aceptación" es igual para las 3 estrategias publicitarias.
+
+$H_A$: La proporción de "Aceptación" es distinta para las 3 estrategias publicitarias.
+
+
+Obtenemos la muestra desde el archivo: 
+
+```{r }
+# Se leen los datos 
+data = read.csv("EP04 Datos.csv", sep = ";")
+
+# Establecemos una semilla
+set.seed(130)  
+
+n_filas = 50
+
+# Se sleccionan filas aleatorias
+muestra = data[sample(nrow(data), n_filas), ]
+
+# Se muestran las filas seleccionadas
+print(muestra)
+
+```
+
+Ahora aplicaremos la prueba con un 95% de confianza:
+
+```{r}
+# Con los datos, se crea una tabla de contingencia
+id <- c(muestra$id)
+estrategia1 <- c(muestra$estrategia_1)
+estrategia2 <- c(muestra$estrategia_2)
+estrategia3 <- c(muestra$estrategia_3)
+
+datos <- data.frame(id, estrategia1, estrategia2, estrategia3)
+
+datos <- datos %>% 
+  pivot_longer(cols = c(estrategia1, estrategia2, estrategia3), 
+               names_to = "Estrategia", values_to = "Respuesta")
+
+datos[["id"]] <- factor(datos[["id"]])
+datos[["Estrategia"]] <- factor(datos[["Estrategia"]])
+
+# Se aplica la prueba Q de Cochran
+prueba <- cochran.qtest(Respuesta ~ Estrategia | id, data = datos, alpha = 0.05)
+print(prueba)
+```
+La prueba nos entrega un p-value = 0.01031, siendo menor que el nivel de significación de 0.05. Por lo que podemos rechazar la hipótesis nula en favor de la hipótesis alternativa. En consecuencia, se concluye con un 95% de confianza que al menos una de las estrategias tiene una proporción de "aceptación" distinta. 
+
+
+Y dado que se obtuvo un resultado significativo  (p < 0.05), es necesario aplicar un procedimiento post-hoc para poder determinar dónde se encuentran las diferencias. 
+
+```{r }
+# Se aplica el procedimiento post-hoc con ajuste de Holm 
+post_hoc_holm <- pairwiseMcnemar(Respuesta ~ Estrategia | id, 
+                                 data = datos, 
+                                 test = "mcnemar", 
+                                 correct = FALSE, 
+                                 method = "holm")
+
+# Se muestra el resultado
+print(post_hoc_holm)
+
+```
+
+Estrategia1 - Estrategia2: Dado que p = 0.0244 es menor al  nivel de significación de 0.05. Podemos decir que existe una diferencia significativa y rechazamos la igualdad entre las dos estrategias. 
+
+Estrategia1 - Estrategia3: Dado que p = 0.8410 es mayor al nivel de significación de 0.05, no hay diferencias significativas. 
+
+Estrategia2 - Estrategia3: Dado que p = 0.0248 es menor al  nivel de significación de 0.05. Podemos decir que existe una diferencia significativa y rechazamos la igualdad entre las dos estrategias. 
+
+
+Finalmente, se puede concluir que las estrategias publicitarias de la agencia de marketing no tienen la misma efectividad. La estrategia 2 tiene un nivel de "aceptación" significativamente distinto al de las otras estrategias.
+
+---
+
+3. En otro planeta se realiza un estudio sobre la preferencia de hábitat de dos especies de alienígenas. Después de observar a una muestra de 17 alienígenas de la especie EA14012-A y 10 de la especie EA14013-B durante meses, se ha determinado que 4 alienígenas de la primera y 8 de la segunda prefieren hábitats subterráneos, mientras los demás prefieren hábitats acuáticos. ¿Existe relación entre las especies alienígenas y elegir hábitats subterráneos o hábitats acuáticos?
+
+R: Primero se plantean las hipótesis:
+
+$H_0$: La prefencia de hábitat no depende de la especie alienígena observada.
+
+$H_A$: La prefencia de hábitat depende de la especie alienígena observada.
+
+Para verificar la hipótesis nula se utilizará la prueba exacta de Fisher. Además se verifica que el experimento es de 2 variables binarias, siendo una respecto del tipo de 2 especies alienígenas, y la otra referente a la preferencia de los individuos sobre un hábitat acuático o subterráneo. Asimismo se presenta un número reducido de observaciones, hay 2 grupos con tamaño menor a 5 registrados en la matriz de contingencia, y el resto no supera las 13 observaciones. Asimismo, se utilizará un nivel de significancia igual a 0.05.
+
+
+```{r}
+# Se generan las listas de los datos
+preferencia_subterraneo <- c(4, 8)
+preferencia_acuatico <- c(13, 2)
+
+# Creo la tabla
+tabla <- as.table(rbind(preferencia_subterraneo, preferencia_acuatico))
+dimnames(tabla) <- list(habitat = c("Subterraneo", "Acuatico"),
+                        especie = c("EA14012-A", "EA14013-B"))
+
+# Muestro la tabla
+print(tabla)
+```
+```{r}
+# Aplico prueba de fisher
+fisher <- fisher.test(tabla)
+
+# Muestro los resultados
+print(fisher)
+```
+
+Dado que hemos obtenido un p-value menor al nivel de significancia: 0.0069 < 0.05, la prueba es significativa, y se rechaza la hipótesis nula en favor de la alternativa, es decir, las variables especie alienígena y preferencia de hábitat están relacionadas.
+
+---
+
+4. Se llevó a cabo una investigación entre dos grupos demográficos: residentes urbanos y suburbanos. Seleccionaron aleatoriamente 32 residentes urbanos y 32 residentes suburbanos, y se les preguntó sobre su preferencia de transporte para desplazarse en la ciudad entre tres opciones comunes, obteniéndose que de los primeros 4 usan el Metro, 18 usan bicicletas y 10 su vehículo particular. mientras que entre los segundos 15 prefieren el Metro, 8 las bicicletas y 9 el vehículo particular.
+¿Son iguales las distribuciones de las preferencias de transporte entre los dos grupos demográficos?
+
+
+R: Para saber si las distribuciones de las preferencias de transporte entre los dos grupos demográficos son iguales, primero analizaremos las variables y el contexto para determinar la prueba a usar. 
+
+Las variables involucradas son categóricas: una define la zona de residencia (Urbano vs. Suburbano) y la otra, la preferencia de transporte (Metro, Bicicletas, Vehículo particular). Además, tenemos dos grupos independientes y los tamaños de las muestras, 32 por grupo, son lo suficientemente grandes para que las frecuencias esperadas sean mayores a 5.
+
+Dado que queremos determinar si la distribución de una variable categórica es la misma en dos o más poblaciones independientes, la prueba no paramétrica adecuada es la Prueba Chi-cuadrado de Pearson.
+
+Ahora definimos la hipótesis nula y alternativa:
+
+$H_0$: Las distribuciones de las preferencias de transporte son iguales entre los residentes urbanos y los residentes suburbanos.
+
+$H_A$: Las distribuciones de las preferencias de transporte no son iguales entre los residentes urbanos y los residentes suburbanos.
+
+```{r}
+#tabla de contingencia
+rUrbanos <- c(4, 18,  10)
+rSuburbanos <- c(15, 8, 9)
+tabla <- as.table ( rbind ( rUrbanos , rSuburbanos ) )
+
+dimnames ( tabla ) <- list ( residentes = c ( " Urbanos " , " Suburbanos " ) ,
+                             Medio_de_transporte = c ( " Metro " , " Bicicletas " , " Vehiculo particular ")) 
+alfa <- 0.05
+prueba <- chisq.test(tabla)
+
+esperadas <- prueba[["expected"]]
+print(esperadas)
+
+# para identificar rápidamente si alguna es menor a 5
+min(esperadas)
+
+# print de los resultados de la prueba chisq
+print(prueba)
+
+
+if (prueba$p.value < alfa) {
+  cat("\nConclusión: Se rechaza H0. Las distribuciones de las preferencias de transporte NO son iguales entre residentes urbanos y suburbanos.\n")
+} else {
+  cat("\nConclusión: Se falla en rechazar H0. No hay evidencia suficiente para afirmar que las distribuciones son distintas.\n")
+}
+
+```
+
+Considerando un nivel de significación de 0.05, el estadístico de prueba arroja un p-value menor a nuestro nivel de significación. Por lo tanto, rechazamos la hipótesis nula.
+
+Se concluye con un 95% de confianza que las distribuciones de las preferencias de transporte no son iguales entre ambos grupos demográficos. El lugar de residencia (urbano o suburbano) influye significativamente en el medio de transporte que eligen las personas.
+
+---
+
+
+
+
+
