@@ -1,0 +1,107 @@
+---
+title: "PEPractica_3"
+author: "Martin Araya"
+date: "2026-05-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# El Enunciado de Práctica: "La Fuga de Batería"
+
+### Contexto: 
+Eres ingeniero en una empresa de desarrollo móvil. Quieres saber si tres algoritmos distintos de sincronización en segundo plano (Algoritmo A, Algoritmo B y Algoritmo C) consumen la misma cantidad de batería. Tomas 60 teléfonos idénticos. Instalas el Algoritmo A en 20 teléfonos, el B en otros 20, y el C en los últimos 20. Registras el porcentaje de batería consumido después de 5 horas.
+
+Los datos están en `consumo_bateria.csv` con dos columnas: `Algoritmo` (A, B, C) y Consumo (numérico, en porcentaje).
+
+### _Pregunta:_ ¿Existe evidencia estadística para afirmar que el consumo de batería difiere entre los tres algoritmos?
+
+#### Paso 1: El Escaneo Mental (Mapeo al Árbol de Decisión)
+
+Antes de tocar R, te sientas frente a la hoja y extraes la arquitectura del problema:
+
+- **Variable Respuesta:** Consumo en porcentaje (Numérica continua). Vamos a comparar medias.
+- **Grupos:** Algoritmo A, B y C (3 grupos).
+- **Relación:** Independientes (Son teléfonos físicos distintos para cada algoritmo. Lo que le pase al teléfono 1 con el Algoritmo A no afecta al teléfono 21 con el Algoritmo B).
+
+Destino en el mapa: ANOVA de una vía (si todo es perfecto) o Kruskal-Wallis (el peor caso).
+
+
+#### Paso 2: Las Hipótesis (Planteando el Juicio)
+Para 3 o más grupos, la hipótesis cambia un poco.
+
+- $H_0$ (Hipótesis Nula): Todos los algoritmos consumen, en promedio, exactamente lo mismo. ($\mu_A = \mu_B = \mu_C$).
+- $H_A$ (Hipótesis Alternativa): Al menos un algoritmo tiene un consumo promedio distinto a los demás. (Nota: H_A no significa que TODOS sean distintos entre sí, solo que hay al menos una oveja negra en la familia).
+
+
+#### Paso 3: Preparación del Entorno (El Código Base)
+```{r}
+# 1. IMPORTACIÓN DE LIBRERÍAS
+# 'dplyr': La usamos porque tiene la función filter(), vital para separar nuestros 3 grupos fácilmente.
+library(dplyr) 
+
+# 'car': La usamos EXCLUSIVAMENTE porque contiene la función leveneTest() para revisar varianzas.
+library(car)   
+
+# 2. LECTURA DE DATOS
+# stringsAsFactors = TRUE es obligatorio para que R entienda que A, B y C son categorías (factores), no simples letras de texto.
+datos <- read.csv("consumo_bateria.csv", stringsAsFactors = TRUE)
+
+# 3. AISLAMIENTO DE GRUPOS (Para poder auditarlos uno por uno)
+consumo_A <- filter(datos, Algoritmo == "A")
+consumo_B <- filter(datos, Algoritmo == "B")
+consumo_C <- filter(datos, Algoritmo == "C")
+```
+
+#### Paso 4: La Auditoría de Paranoia (Buscando el Peor Caso)
+Las pruebas paramétricas (como ANOVA) son divas; exigen perfección. Si una sola condición falla, se niegan a trabajar correctamente.
+
+##### Auditoría 1: Normalidad (Shapiro-Wilk)
+Debes evaluar la normalidad de cada grupo por separado.
+```{r}
+# Le pasamos solo la columna $Consumo a la prueba
+shapiro.test(consumo_A$Consumo)
+shapiro.test(consumo_B$Consumo)
+shapiro.test(consumo_C$Consumo)
+```
+los TRES dan $p \ge 0.05$, paso la prueba.
+
+
+##### Auditoría 2: Homocedasticidad / Igualdad de Varianzas (Levene)
+Solo haces esto si pasaste la normalidad en los 3 grupos.
+```{r}
+# Se lee: "Evalúa el Consumo distribuido (~) por el Algoritmo"
+leveneTest(Consumo ~ Algoritmo, data = datos)
+```
+Si $p \ge 0.05$, las varianzas son iguales. Tienes luz verde absoluta para ANOVA. Pero en este caso, da $p < 0.05$, las varianzas son distintas. (En 3 grupos, si falla Levene, también se suele saltar al Camino B, o se usa un "Welch ANOVA")
+
+
+##### CAMINO B: El Peor Caso (Falla Normalidad o falla Levene)
+Ejecutamos Kruskal-Wallis (el equivalente rebelde y no paramétrico).
+```{r}
+kruskal.test(Consumo ~ Algoritmo, data = datos)
+```
+
+#### Paso 6: El Análisis "Post-Hoc" (¿Quién es el culpable?)
+Como $1.299e-08 < 0.05$, Rechazas $H_0$. ¡Excelente! Sabes que al menos un algoritmo es distinto. ¿Pero cuál? ¿Fue el A vs B? ¿Fue el C vs A? Kruskal-Wallis no te lo dice. Solo te dice "hay un intruso".
+
+Para descubrir quién es el diferente, debes hacer una prueba Post-Hoc (que significa "después de esto"). Consiste en ponerlos a pelear 1 contra 1 (A vs B, A vs C, B vs C).
+
+```{r}
+# Post-Hoc para Kruskal-Wallis (Se usa pairwise.wilcox.test)
+# 'p.adjust.method = "BH"' aplica un castigo matemático a los p-values para que no te equivoques al hacer tantas comparaciones.
+pairwise.wilcox.test(x = datos$Consumo, g = datos$Algoritmo, p.adjust.method = "BH", paired = FALSE)
+```
+
+```{r}
+tapply(datos$Consumo, datos$Algoritmo, summary)
+```
+
+#### Conclusion: 
+"Existe evidencia estadística suficiente (\(p < 0.05\)) para afirmar que los algoritmos no consumen lo mismo. Tras el análisis post-hoc, se concluye que el Algoritmo C es el menos eficiente (mayor consumo), mientras que los Algoritmos A y B son los más eficientes, no presentando diferencias significativas entre ellos."
+
+
+
+
