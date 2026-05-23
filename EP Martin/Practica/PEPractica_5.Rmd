@@ -1,0 +1,86 @@
+---
+title: "PEPractica_5"
+author: "Martín Araya"
+date: "2026-05-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Análisis de Variables Categóricas (Proporciones)
+
+### Contexto del Problema:
+Una empresa de tecnología quiere saber si el departamento en el que trabaja un ingeniero (Frontend, Backend, Data Science) está asociado con su preferencia de sistema operativo (Windows, macOS, Linux). Toman una muestra de 120 ingenieros.
+Los datos están en `sistemas_ops.csv`, con dos columnas puramente de texto: `Departamento` y `OS`.
+
+Pregunta de Investigación: **¿Existe dependencia entre el departamento de un ingeniero y el sistema operativo que utiliza, o son variables independientes?**
+
+
+
+## PASO 1: El Escaneo Mental (¡Cambio de Paradigma!)
+
+- Variable 1: Departamento (Categórica).
+- Variable 2: Sistema Operativo (Categórica).
+- Ruta en el árbol: Como ambas variables son categóricas, no hay medias, no hay medianas, no hay campanas de Gauss. Estamos contando "cabezas" (frecuencias). El destino es una Prueba de Independencia Chi-cuadrado ($\chi^2$) o la Prueba Exacta de Fisher (el peor caso).
+
+## PASO 2: Las Hipótesis de Categorías
+Para estas pruebas, las hipótesis siempre se redactan en términos de "asociación" o "independencia", jamás de promedios.
+
+- $H_0$ (Hipótesis Nula): El Sistema Operativo y el Departamento son independientes (la proporción de uso de OS es la misma sin importar el departamento).
+- $H_A$ (Hipótesis Alternativa): El Sistema Operativo y el Departamento están asociados / son dependientes (saber el departamento te da pistas sobre qué OS prefieren).
+
+## PASO 3: Preparación y la Matriz de Confusión
+En datos categóricos, R necesita que transformes la lista gigante de 120 filas en una tabla resumen (Tabla de Contingencia).
+```{r}
+# 1. Ingesta de datos
+datos <- read.csv("sistemas_ops.csv", stringsAsFactors = TRUE)
+
+# 2. CREACIÓN DE LA TABLA DE CONTINGENCIA (Crucial)
+# La función table() cuenta cuántos cayeron en cada combinación.
+tabla_frecuencias <- table(datos$Departamento, datos$OS)
+
+# Imprimimos la tabla para verla
+print(tabla_frecuencias)
+```
+
+
+## PASO 4: La Aduana Categórica (Frecuencias Esperadas)
+Como te dije, aquí no existe Shapiro-Wilk. La estadística paramétrica para categorías (Chi-cuadrado) tiene una sola regla de oro paranoica: Para que la prueba sea válida, ninguna "celda" de la tabla debe tener una frecuencia esperada menor a 5. (Nota: Frecuencia "esperada" es lo que matemáticamente debería haber si $H_0$ fuera perfecta, no lo que tú contaste en la realidad).
+```{r}
+# 1. Ejecutamos la prueba de Chi-cuadrado y la guardamos en un objeto (sin mirar el p-value todavía)
+prueba_chi <- chisq.test(tabla_frecuencias)
+
+# 2. PASAMOS POR LA ADUANA (Revisamos las frecuencias esperadas por R)
+prueba_chi$expected
+```
+Camino A (El Escenario Ideal): Absolutamente todos los números en esa matriz son mayores o iguales a 5 ($\ge 5$). Por lo que se pasó la “aduana”. Se Puede imprimir resultado y mirar el $p$-value.
+
+```{r}
+prueba_chi
+```
+
+## PASO 5: Decisión y Post-Hoc Categórico (Buscando la Anomalía)
+Como $0.0008436 < 0.05$, Rechazamos $H_0$. Las variables están asociadas. Los Data Scientists no usan lo mismo que los Frontend. Pero, ¿quién prefiere qué?
+
+En Chi-cuadrado, el Post-Hoc más profesional y simple de leer son los Residuos Estandarizados. Es como pedirle a R que le ponga una "nota" a cada celda.
+```{r}
+# Le pedimos a R que nos muestre los residuos estandarizados
+prueba_chi$stdres
+```
+
+**Cómo leer los Residuos Estandarizados (Regla del 1.96):**
+Más de 1.96 o menos de -1.96: La diferencia es **significativa** (hay una asociación real con un 95% de confianza).
+Cualquier número en esa matriz que sea **mayor a 1.96** significa que hay muchos más ingenieros ahí de lo que se esperaba (Preferencia fuerte).
+Cualquier número **menor a -1.96** significa que hay muchos menos de lo que se esperaba (Rechazo fuerte).
+Los números entre -1.96 y 1.96 son "normales", no aportan a la diferencia, La diferencia es despreciable; se explica por puro **azar**.
+
+### Conclusión:
+Para evaluar la relación entre el departamento y el sistema operativo, se aplicó una Prueba de Independencia Chi-cuadrado (\(\chi ^{2}\)). Tras verificar que el 100% de las frecuencias esperadas son \(\ge 5\), se confirma la validez del test. Con un \(p\)-valor de \(0.0008436\) (menor al nivel de significancia del 5%), existe evidencia estadística suficiente para rechazar la hipótesis nula (\(H_{0}\)), concluyendo que el sistema operativo utilizado depende del departamento del ingeniero.
+
+El análisis de residuos estandarizados permite identificar los focos de esta asociación (usando el umbral crítico de \(\pm 1.96\)):
+
+- Backend: Presenta una fuerte asociación positiva con Linux (\(3.70\)) y un rechazo significativo hacia macOS (\(-2.96\)).
+- Frontend: Muestra una clara preferencia por macOS (\(3.09\)) y una subrepresentación de usuarios de Linux (\(-3.43\)).
+- Data Science: No presenta asociaciones significativas (todos sus residuos están entre \(-1.96\) y \(1.96\)), lo que indica que sus preferencias de OS se distribuyen de forma aleatoria o equitativa.

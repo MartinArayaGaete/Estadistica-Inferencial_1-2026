@@ -1,0 +1,127 @@
+---
+title: "PEPractica_4"
+author: "Martín Araya"
+date: "2026-05-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# "El Colapso de la Base de Datos"
+### Contexto del Problema:
+Una corporación bancaria tiene problemas con el tiempo que tardan sus servidores en procesar transacciones simultáneas. El equipo de ingeniería propone tres parches de optimización de código (Parche A, Parche B, Parche C). Para probarlos, seleccionan una muestra aleatoria de **12 servidores idénticos**.
+
+A cada servidor se le inyecta una carga de 10,000 transacciones y se mide su tiempo de procesamiento en milisegundos con el Parche A. Luego, al mismo servidor se le aplica el Parche B y se vuelve a medir. Finalmente, se repite con el Parche C.
+
+Los datos están en `servidores_banco.csv`, estructurados en tres columnas: `ID_Servidor` (del 1 al 12), `Parche` (A, B, C) y `Tiempo_ms`.
+
+##### Las 3 Preguntas Clásicas del EP:
+
+##### - Formule una pregunta de investigación pertinente y sus hipótesis correspondientes.
+
+##### - Ejecute la auditoría de supuestos. Si encuentra un problema, explique cómo el algoritmo debe corregirlo.
+
+##### - Determine qué parche debería implementar el banco en producción, justificando con la prueba estadística correcta y su análisis post-hoc.
+
+### PASO 1: El Escaneo Mental y la Pregunta de Investigación
+- **Variable**: Tiempo en milisegundos (Numérica continua).
+- **Grupos**: Parche A, B y C (3 grupos).
+- **Relación**: ¡ALERTA ROJA! El mismo servidor fue evaluado 3 veces. Son muestras correlacionadas / medidas repetidas. No podemos usar el ANOVA tradicional del ejercicio anterior. El destino es un **ANOVA de Medidas Repetidas** o una **Prueba de Friedman**.
+
+
+#### 1. Pregunta de Investigación:
+¿Existe una diferencia estadísticamente significativa en el tiempo de procesamiento de los servidores al aplicar los parches de optimización A, B y C?
+
+#### 2. Hipótesis:
+
+- $H_0$: El tiempo medio de procesamiento es igual para los tres parches. ($\mu_A = \mu_B = \mu_C$)
+- $H_A$: Al menos uno de los parches genera un tiempo medio de procesamiento distinto a los demás.
+
+### PASO 2: Preparación y la Primera Aduana (Normalidad)
+En R, para medidas repetidas usamos una librería especializada llamada `ez`.
+```{r}
+# 1. Cargar librerías
+library(dplyr)
+library(ez) # Librería reina para ANOVA de medidas repetidas
+
+# 2. Ingesta de datos
+datos <- read.csv("servidores_banco.csv", stringsAsFactors = TRUE)
+
+# Convertimos explícitamente el ID del servidor a factor. 
+# Si R lee "1, 2, 3", creerá que es un número matemático. Queremos que entienda que es un "Sujeto de prueba".
+datos$ID_Servidor <- as.factor(datos$ID_Servidor)
+
+# 3. Auditoría de Normalidad (Se filtra por parche y se evalúa cada uno)
+parche_A <- filter(datos, Parche == "A")
+parche_B <- filter(datos, Parche == "B")
+parche_C <- filter(datos, Parche == "C")
+
+shapiro.test(parche_A$Tiempo_ms)
+shapiro.test(parche_B$Tiempo_ms)
+shapiro.test(parche_C$Tiempo_ms)
+```
+Dado que una prueba no dio normal, hay que transformarla; por logaritmo
+```{r}
+# 1. Creamos una NUEVA columna en nuestro dataframe con los datos transformados.
+# Jamás sobreescribas los datos originales.
+datos$Tiempo_Log <- log(datos$Tiempo_ms)
+
+# 2. Volvemos a aislar los grupos, pero ahora usando la nueva columna transformada.
+parche_A_log <- filter(datos, Parche == "A")
+parche_B_log <- filter(datos, Parche == "B")
+parche_C_log <- filter(datos, Parche == "C")
+
+# 3. PASAMOS NUEVAMENTE POR LA ADUANA (Shapiro-Wilk a los datos logarítmicos)
+shapiro.test(parche_A_log$Tiempo_Log)
+shapiro.test(parche_B_log$Tiempo_Log)
+shapiro.test(parche_C_log$Tiempo_Log)
+```
+Caso Fallido: El Parche C sigue dando un $p < 0.05$ incluso después del logaritmo, significa que la transformación falló. Tocó abortar el camino paramétrico por completo e ir a la Opción 2.
+
+### Opción 2: El Camino No Paramétrico (La Prueba de Friedman)
+Se intentó transformar los datos y volvió a fallar Shapiro, el árbol de decisión manda al destino final no paramétrico para 3 o más grupos correlacionados (medidas repetidas): La Prueba de Friedman (Capítulo 11).
+
+
+Esta prueba no le importa si los datos son campanas de Gauss o no, porque destruye las magnitudes y trabaja con el orden de los datos (rangos) dentro de cada servidor.
+```{r}
+# La sintaxis de Friedman para medidas repetidas en R base usa una barra vertical '|'
+# Se lee: "Evalúa Tiempo_ms en función del Parche, SEPARADO por cada ID_Servidor"
+friedman.test(Tiempo_ms ~ Parche | ID_Servidor, data = datos)
+```
+###### El Post-Hoc de Friedman:
+La prueba de Friedman da un $p < 0.05$, se rechaza la hipótesis nula. Hay un parche diferente, pero como Friedman es ómnibus, se necesita el mano a mano (Post-Hoc). Usamos comparaciones pareadas por rangos:
+```{r}
+# Compara los parches en parejas usando Wilcoxon Pareado.
+# Volvemos a usar "BH" (Benjamini-Hochberg) para ajustar los p-values y evitar errores acumulados.
+pairwise.wilcox.test(
+  x = datos$Tiempo_ms, 
+  g = datos$Parche, 
+  p.adjust.method = "BH", 
+  paired = TRUE # OBLIGATORIO: Sigue siendo el mismo servidor medido múltiples veces
+)
+```
+
+Recordar; Comparamos cada celda contra el umbral $\alpha = 0.05$.
+- Intersección A vs B: $p = 0.0038$. Como $0.0038 < 0.05 \rightarrow$ Son significativamente diferentes.
+- Intersección A vs C: $p = 0.0038$. Como $0.0038 < 0.05 \rightarrow$ Son significativamente diferentes.
+- Intersección B vs C: $p = 0.0038$. Como $0.0038 < 0.05 \rightarrow$ Son significativamente diferentes.
+
+Conclusión de la matriz: Aquí no hay un solo impostor... ¡Todos los parches son significativamente diferentes entre sí! El Parche A no se comporta como el B, el B no se comporta como el C, y el C no se comporta como el A.
+
+
+### 3. El Desempate: ¿Quién es el mejor?
+
+
+Como la matriz te dice que los tres parches son totalmente diferentes en rendimiento, necesitas saber cuál es el que tiene los tiempos más bajos para recomendárselo al banco. Ejecutamos el descriptor de medianas (recuerda que en Friedman usamos medianas, no medias, porque los datos no son normales):
+
+```{r}
+# Usamos median en vez de summary para ir directo al grano
+tapply(datos$Tiempo_ms, datos$Parche, median)
+```
+
+## Conclusión:
+Tras detectar que el grupo Parche C no cumplía el supuesto de normalidad (Shapiro-Wilk, $p = 0.001193$) y que la transformación logarítmica no logró corregir la asimetría ($p = 0.002327$), se procedió a realizar una Prueba de Friedman para medidas repetidas.La prueba ómnibus reveló diferencias altamente significativas entre los tratamientos ($\chi^2 = 20.723, df = 2, p = 3.162 \times 10^{-5}$). El análisis post-hoc de Wilcoxon por pares con corrección de Benjamini-Hochberg (BH) demostró que todos los parches difieren significativamente entre sí ($p = 0.0038$ en todas las comparaciones).Al evaluar las medianas de rendimiento, el Parche C demostró ser el más eficiente con el menor tiempo de procesamiento (350 ms), seguido por el Parche B (387 ms), siendo el Parche A el de peor desempeño (419 ms). Se recomienda al banco implementar el Parche C de forma inmediata.
+
+

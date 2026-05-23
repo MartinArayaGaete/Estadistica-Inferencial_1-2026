@@ -392,11 +392,12 @@ const TREE = {
   /* ── PUNTO DE ENTRADA ── */
   start:{
     badge:"Punto de partida",
-    q:"¿Qué tipo de variable estás analizando?",
+    q:"¿Qué tipo de análisis necesitas?",
     hint:null,
     opts:[
-      {label:"Numérica continua — medias, tiempos, temperatura, etc.", next:"numGroups", crumb:"Variable numérica"},
-      {label:"Categórica — sí/no, éxito/fracaso, proporciones", next:"catGroups", crumb:"Variable categórica"}
+      {label:"Comparar grupos (numéricos) — medias, tiempos, etc.", next:"numGroups", crumb:"Medias"},
+      {label:"Relacionar 2 variables numéricas — correlación y regresión", next:"relationNorm", crumb:"Relación"},
+      {label:"Analizar frecuencias o proporciones (categóricos)", next:"catGroups", crumb:"Frecuencias"}
     ]
   },
 
@@ -411,6 +412,17 @@ const TREE = {
       {label:"1 grupo — comparado contra un valor fijo conocido", next:"norm1", crumb:"1 grupo"},
       {label:"2 grupos", next:"norm2", crumb:"2 grupos"},
       {label:"3 o más grupos", next:"norm3", crumb:"3+ grupos"}
+    ]
+  },
+
+  /* RELACIÓN NUMÉRICA */
+  relationNorm:{
+    badge:"Relación numérica",
+    q:"¿Ambas variables cumplen normalidad?",
+    hint:"shapiro.test(x) y shapiro.test(y)  →  ambos p ≥ 0.05",
+    opts:[
+      {label:"Sí — ambas son normales", next:"res_pearson", crumb:"Paramétrica"},
+      {label:"No — al menos una no es normal", next:"res_spearman", crumb:"No paramétrica"}
     ]
   },
 
@@ -605,9 +617,18 @@ const TREE = {
     q:"¿Cuántos grupos estás comparando?",
     hint:null,
     opts:[
-      {label:"1 grupo — contrastar contra una proporción conocida", next:"res_wilson", crumb:"1 grupo"},
+      {label:"1 grupo", next:"cat1Type", crumb:"1 grupo"},
       {label:"2 grupos", next:"catIndep2", crumb:"2 grupos"},
       {label:"3 o más grupos", next:"catIndep3", crumb:"3+ grupos"}
+    ]
+  },
+  cat1Type:{
+    badge:"1 grupo categórico",
+    q:"¿Qué deseas evaluar?",
+    hint:null,
+    opts:[
+      {label:"Una proporción — comparar éxito/fracaso contra p0", next:"res_wilson", crumb:"Proporción"},
+      {label:"Bondad de ajuste — ¿los datos siguen una distribución teórica?", next:"res_chisq_gof", crumb:"Bondad de ajuste"}
     ]
   },
   catIndep2:{
@@ -901,6 +922,47 @@ const TREE = {
       "Mismo sujeto evaluado en 3+ condiciones"
     ],
     note:"Si p < 0.05, aplica McNemar por pares como post-hoc, con corrección de Bonferroni u Holm."
+  },
+
+  /* ════════════════════════════════
+     RELACIÓN Y BONDAD DE AJUSTE
+  ════════════════════════════════ */
+  res_pearson:{
+    result:true, cls:"p",
+    tag:"Paramétrica · Relación",
+    name:"Correlación de Pearson",
+    rfunc:"cor.test(x, y, method = 'pearson')",
+    conds:[
+      "Ambas variables numéricas y continuas",
+      "Normalidad en ambas variables (Shapiro-Wilk p ≥ 0.05)",
+      "Relación lineal entre variables",
+      "Homocedasticidad de los residuos"
+    ],
+    note:"Si buscas predecir Y en función de X, usa Regresión Lineal Simple: lm(y ~ x). Reporta el coeficiente r y el valor p."
+  },
+  res_spearman:{
+    result:true, cls:"np",
+    tag:"No paramétrica · Relación",
+    name:"Correlación de Spearman / Kendall",
+    rfunc:"cor.test(x, y, method = 'spearman')\n# o method = 'kendall'",
+    conds:[
+      "No se asume normalidad",
+      "Relación monótona (no necesariamente lineal)",
+      "Escala al menos ordinal"
+    ],
+    note:"Spearman (rho) es preferible para muestras grandes. Kendall (tau) es más robusto para muestras pequeñas o muchos empates en los rangos."
+  },
+  res_chisq_gof:{
+    result:true, cls:"c",
+    tag:"Categórica · 1 muestra",
+    name:"Chi-cuadrado de\nBondad de Ajuste",
+    rfunc:"chisq.test(x = frecuencias_obs, p = prob_esperadas)",
+    conds:[
+      "Variable categórica",
+      "Frecuencias esperadas ≥ 5 en al menos el 80% de las celdas",
+      "Ninguna frecuencia esperada < 1"
+    ],
+    note:"Se usa para comparar si una muestra sigue una distribución teórica (ej: Uniforme, Poisson, Mendeliana, Benford)."
   }
 };
 
