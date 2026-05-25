@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Error Tipo I, II y Potencia Estadística</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f4;color:#1c1917;font-size:14px;min-height:100vh}
+.app{max-width:960px;margin:0 auto;padding:20px 16px}
+h1{font-size:18px;font-weight:600;margin-bottom:4px;color:#0c0a09}
+.subtitle{font-size:13px;color:#78716c;margin-bottom:18px}
+
+.main-row{display:flex;gap:16px;margin-bottom:12px;align-items:flex-start}
+.canvas-wrap{flex:1;min-width:0}
+canvas{display:block;width:100%;height:320px;background:#fff;border:1px solid #e7e5e4;border-radius:10px}
+
+.controls{width:230px;display:flex;flex-direction:column;gap:18px}
+.ctrl{display:flex;flex-direction:column;gap:5px}
+.ctrl-header{display:flex;justify-content:space-between;align-items:baseline}
+.ctrl-label{font-size:12px;color:#57534e;font-weight:500}
+.ctrl-val{font-size:14px;font-weight:600;color:#0c0a09}
+.ctrl-hint{font-size:11px;color:#a8a29e;line-height:1.4}
+input[type=range]{width:100%;height:4px;-webkit-appearance:none;appearance:none;background:#e7e5e4;border-radius:2px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.25)}
+#sa::-webkit-slider-thumb{background:#dc2626}
+#sd::-webkit-slider-thumb{background:#d97706}
+#sn::-webkit-slider-thumb{background:#16a34a}
+
+.tails{display:flex;gap:4px;margin-top:4px}
+.tb{flex:1;padding:5px 8px;font-size:11px;font-weight:500;border:1px solid #d6d3d1;background:#fff;border-radius:6px;cursor:pointer;transition:all .15s;color:#57534e}
+.tb.on{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.stat{padding:10px 12px;border-radius:8px;border:1px solid}
+.stat-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.stat-val{font-size:22px;font-weight:600;line-height:1}
+.s-alpha{background:#fef2f2;border-color:#fecaca}.s-alpha .stat-lbl{color:#dc2626}.s-alpha .stat-val{color:#b91c1c}
+.s-beta{background:#eff6ff;border-color:#bfdbfe}.s-beta .stat-lbl{color:#2563eb}.s-beta .stat-val{color:#1d4ed8}
+.s-power{background:#f0fdf4;border-color:#bbf7d0}.s-power .stat-lbl{color:#16a34a}.s-power .stat-val{color:#15803d}
+.s-crit{background:#fafaf9;border-color:#e7e5e4}.s-crit .stat-lbl{color:#78716c}.s-crit .stat-val{color:#292524}
+
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px;font-size:11px;color:#57534e}
+.li{display:flex;align-items:center;gap:5px}
+.lline{width:18px;height:3px;border-radius:1px;flex-shrink:0}
+.lblock{width:14px;height:11px;border-radius:2px;flex-shrink:0}
+.ldot{width:9px;height:9px;border-radius:50%;background:#d97706;flex-shrink:0}
+.ldash{width:18px;height:0;border-top:2px dashed #a8a29e;flex-shrink:0}
+
+.expbox{background:#fafaf9;border:1px solid #e7e5e4;border-radius:10px;padding:14px 16px;font-size:12.5px;line-height:1.75;color:#44403c}
+.expbox b{color:#0c0a09;font-weight:600}
+.expbox .good{color:#15803d;font-weight:500}
+.expbox .warn{color:#b45309;font-weight:500}
+.expbox .bad{color:#b91c1c;font-weight:500}
+.expbox .note{color:#1d4ed8;font-weight:500}
+.dot-sep{color:#a8a29e;margin:0 6px}
+
+.rel-box{margin-top:10px;padding:10px 12px;background:#fff;border:1px solid #e7e5e4;border-radius:8px;font-size:12px;line-height:1.65;color:#57534e}
+.rel-box b{color:#0c0a09}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Error Tipo I &amp; II — Potencia Estadística</h1>
+  <p class="subtitle">Mueve los parámetros y observa cómo se desplazan las curvas, cambian las zonas y se relacionan los errores.</p>
+
+  <div id="bgdetect" style="position:absolute;width:1px;height:1px;overflow:hidden;background:#fff"></div>
+
+  <div class="main-row">
+    <div class="canvas-wrap">
+      <canvas id="cv"></canvas>
+    </div>
+    <div class="controls">
+      <div class="ctrl">
+        <div class="ctrl-header">
+          <span class="ctrl-label">Nivel de significancia α</span>
+          <span class="ctrl-val" id="va">0.050</span>
+        </div>
+        <input type="range" id="sa" min="0.005" max="0.20" step="0.005" value="0.05">
+        <div class="ctrl-hint">Error Tipo I: zona roja bajo H₀</div>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-header">
+          <span class="ctrl-label">Tamaño de efecto d (Cohen)</span>
+          <span class="ctrl-val" id="vd">1.00</span>
+        </div>
+        <input type="range" id="sd" min="0.1" max="3.0" step="0.05" value="1.0">
+        <div class="ctrl-hint">Distancia entre μ₀ y μ₁ en unidades σ</div>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-header">
+          <span class="ctrl-label">Tamaño de muestra n</span>
+          <span class="ctrl-val" id="vn">30</span>
+        </div>
+        <input type="range" id="sn" min="5" max="200" step="1" value="30">
+        <div class="ctrl-hint">Más n → curvas más angostas → mayor potencia</div>
+      </div>
+      <div class="ctrl">
+        <span class="ctrl-label">Tipo de prueba</span>
+        <div class="tails">
+          <button class="tb on" id="b1" onclick="setT(1)">Una cola →</button>
+          <button class="tb" id="b2" onclick="setT(2)">Dos colas ↔</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat s-alpha"><div class="stat-lbl">α · Error Tipo I</div><div class="stat-val" id="da">—</div></div>
+    <div class="stat s-beta"><div class="stat-lbl">β · Error Tipo II</div><div class="stat-val" id="db">—</div></div>
+    <div class="stat s-power"><div class="stat-lbl">1−β · Potencia</div><div class="stat-val" id="dp">—</div></div>
+    <div class="stat s-crit"><div class="stat-lbl">Valor crítico</div><div class="stat-val" id="dc">—</div></div>
+  </div>
+
+  <div class="legend">
+    <div class="li"><div class="lline" style="background:#2563eb"></div> H₀ — hipótesis nula</div>
+    <div class="li"><div class="lline" style="background:#c2410c"></div> H₁ — alternativa</div>
+    <div class="li"><div class="lblock" style="background:rgba(220,38,38,.22)"></div> Zona α (Error Tipo I)</div>
+    <div class="li"><div class="lblock" style="background:rgba(37,99,235,.22)"></div> Zona β (Error Tipo II)</div>
+    <div class="li"><div class="lblock" style="background:rgba(22,163,74,.22)"></div> Potencia (1−β)</div>
+    <div class="li"><div class="ldot"></div> Intersección de curvas</div>
+    <div class="li"><div class="ldash"></div> Valor crítico</div>
+  </div>
+
+  <div class="expbox" id="exp"></div>
+</div>
+
+<script>
+// ── math ──────────────────────────────────────────────────────────────────────
+function pdf(x,mu,sig){const z=(x-mu)/sig;return Math.exp(-.5*z*z)/(sig*Math.sqrt(2*Math.PI))}
+
+function cdf(x){
+  const a=[.254829592,-.284496736,1.421413741,-1.453152027,1.061405429],p=.3275911;
+  const s=x<0?-1:1,t=1/(1+p*Math.abs(x)/Math.SQRT2);
+  const y=1-((((a[4]*t+a[3])*t+a[2])*t+a[1])*t+a[0])*t*Math.exp(-x*x/2);
+  return .5*(1+s*y);
+}
+
+function inv(p){
+  const a=[-39.6968302866538,220.946098424521,-275.928510446969,138.357751867269,
+            -30.6647980661472,2.50662827745924];
+  const b=[-54.476082965424,161.585836858235,-155.698979859887,66.8013118877197,-13.2806815528857];
+  const c=[-7.78489400243029e-3,-.322396458041136,-2.40075779161538,-2.54973253934373,
+             4.37466414144223,2.93816398269878];
+  const d=[7.78469570904146e-3,.322467310058798,2.44513413142956,3.75440866190742];
+  if(p<.02425){const q=Math.sqrt(-2*Math.log(p));return(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);}
+  if(p<=.97575){const q=p-.5,r=q*q;return(((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);}
+  const q=Math.sqrt(-2*Math.log(1-p));return-(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+}
+
+// ── state ─────────────────────────────────────────────────────────────────────
+let alpha=.05, d=1.0, n=30, tails=1;
+
+function setT(t){
+  tails=t;
+  document.getElementById('b1').className='tb'+(t===1?' on':'');
+  document.getElementById('b2').className='tb'+(t===2?' on':'');
+  render();
+}
+
+// ── canvas ────────────────────────────────────────────────────────────────────
+const cv=document.getElementById('cv');
+const ctx=cv.getContext('2d');
+
+function resize(){
+  cv.width=cv.clientWidth;
+  cv.height=cv.clientHeight;
+  render();
+}
+
+function shade(mu,sig,xa,xb,color,xMin,xMax,px,py,base){
+  const xs=Math.max(xa,xMin),xe=Math.min(xb,xMax);
+  if(xs>=xe)return;
+  ctx.beginPath();
+  ctx.moveTo(px(xs),base);
+  const S=250;
+  for(let i=0;i<=S;i++){
+    const xi=xs+(xe-xs)*i/S;
+    ctx.lineTo(px(xi),py(pdf(xi,mu,sig)));
+  }
+  ctx.lineTo(px(xe),base);
+  ctx.closePath();
+  ctx.fillStyle=color;
+  ctx.fill();
+}
+
+function curve(mu,sig,color,xMin,xMax,px,py){
+  ctx.beginPath();
+  const S=400;
+  for(let i=0;i<=S;i++){
+    const xi=xMin+(xMax-xMin)*i/S;
+    const yi=pdf(xi,mu,sig);
+    i===0?ctx.moveTo(px(xi),py(yi)):ctx.lineTo(px(xi),py(yi));
+  }
+  ctx.strokeStyle=color;
+  ctx.lineWidth=2.2;
+  ctx.lineJoin='round';
+  ctx.stroke();
+}
+
+function draw(){
+  const W=cv.width,H=cv.height;
+  if(!W||!H)return null;
+  const mL=52,mR=16,mT=28,mB=40;
+  const pW=W-mL-mR,pH=H-mT-mB;
+
+  const se=1/Math.sqrt(n);
+  const ac=tails===1?alpha:alpha/2;
+  const zc=inv(1-ac);
+  const critX=zc*se;
+  const critXL=tails===2?-zc*se:null;
+  const intersectX=d/2;
+
+  let beta,power;
+  if(tails===1){
+    beta=cdf((critX-d)/se);
+    power=1-beta;
+  }else{
+    beta=cdf((critX-d)/se)-cdf((critXL-d)/se);
+    power=1-beta;
+  }
+
+  const pad=4*se;
+  const xMin=tails===2?Math.min(critXL-pad,-pad):-pad;
+  const xMax=d+pad;
+
+  const px=x=>mL+(x-xMin)/(xMax-xMin)*pW;
+  const maxP=pdf(0,0,se);
+  const py=y=>mT+pH-(y/maxP)*pH*.9;
+  const base=py(0);
+
+  // background
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(0,0,W,H);
+
+  // grid
+  ctx.strokeStyle='rgba(0,0,0,.055)';
+  ctx.lineWidth=.5;
+  for(let i=1;i<8;i++){ctx.beginPath();ctx.moveTo(mL+i/8*pW,mT);ctx.lineTo(mL+i/8*pW,base);ctx.stroke()}
+  for(let j=1;j<4;j++){ctx.beginPath();ctx.moveTo(mL,mT+j/4*(base-mT));ctx.lineTo(mL+pW,mT+j/4*(base-mT));ctx.stroke()}
+
+  // axis
+  ctx.strokeStyle='rgba(0,0,0,.2)';
+  ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(mL,base);ctx.lineTo(mL+pW,base);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(mL,mT);ctx.lineTo(mL,base);ctx.stroke();
+
+  // y-axis labels (relative density)
+  ctx.fillStyle='rgba(0,0,0,.35)';
+  ctx.font='9px system-ui';
+  ctx.textAlign='right';
+  for(let j=1;j<=3;j++){
+    const yv=j/4;
+    ctx.fillText((yv).toFixed(2),mL-4,py(yv*maxP)+3);
+  }
+
+  // shade regions
+  shade(d,se,critX,xMax,'rgba(22,163,74,.2)',xMin,xMax,px,py,base);   // power
+  shade(d,se,xMin,critX,'rgba(37,99,235,.18)',xMin,xMax,px,py,base);  // beta
+  shade(0,se,critX,xMax,'rgba(220,38,38,.22)',xMin,xMax,px,py,base);  // alpha
+  if(tails===2&&critXL!==null){
+    shade(0,se,xMin,critXL,'rgba(220,38,38,.22)',xMin,xMax,px,py,base);
+    shade(d,se,xMin,critXL,'rgba(22,163,74,.12)',xMin,xMax,px,py,base);
+  }
+
+  // curves
+  curve(d,se,'#c2410c',xMin,xMax,px,py);  // H1
+  curve(0,se,'#1d4ed8',xMin,xMax,px,py);  // H0
+
+  // critical value line(s)
+  function critLine(cx,label){
+    const cpx=px(cx);
+    ctx.save();
+    ctx.beginPath();
+    ctx.setLineDash([5,4]);
+    ctx.moveTo(cpx,mT+2);
+    ctx.lineTo(cpx,base);
+    ctx.strokeStyle='rgba(0,0,0,.45)';
+    ctx.lineWidth=1.5;
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle='rgba(0,0,0,.5)';
+    ctx.font='bold 10px system-ui';
+    ctx.textAlign='center';
+    ctx.fillText(label,cpx,mT+12);
+  }
+  critLine(critX,'vc='+critX.toFixed(3));
+  if(tails===2&&critXL!==null) critLine(critXL,'vc='+critXL.toFixed(3));
+
+  // intersection dot
+  const ipx=px(intersectX);
+  const ipy=py(pdf(intersectX,0,se));
+  ctx.beginPath();
+  ctx.arc(ipx,ipy,7,0,2*Math.PI);
+  ctx.fillStyle='rgba(217,119,6,.18)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(ipx,ipy,4.5,0,2*Math.PI);
+  ctx.fillStyle='#d97706';
+  ctx.fill();
+  ctx.strokeStyle='#fff';
+  ctx.lineWidth=1.5;
+  ctx.stroke();
+
+  // region labels (inside zones)
+  ctx.font='bold 10px system-ui';
+  ctx.textAlign='center';
+  // α label
+  const alphaMid=(critX+xMax)/2;
+  if(alphaMid<xMax&&alphaMid>xMin){
+    ctx.fillStyle='rgba(185,28,28,.8)';
+    ctx.fillText('α',px(alphaMid),py(pdf(critX,0,se)*.4));
+  }
+  // β label
+  const betaMid=(xMin+critX)/2;
+  ctx.fillStyle='rgba(29,78,216,.8)';
+  ctx.fillText('β',px(Math.max(betaMid,xMin+.1)),py(pdf(d/2,d,se)*.4));
+  // power label
+  ctx.fillStyle='rgba(21,128,61,.8)';
+  ctx.fillText('1−β',px(Math.min((critX+xMax)/2,xMax-.1)),py(pdf(critX,d,se)*.6));
+
+  // mu labels
+  ctx.textAlign='center';
+  ctx.font='11px system-ui';
+  ctx.fillStyle='#1d4ed8';
+  ctx.fillText('μ₀=0',px(0),base+16);
+  ctx.fillStyle='#c2410c';
+  ctx.fillText('μ₁='+d.toFixed(2),px(d),base+16);
+
+  // x ticks
+  ctx.fillStyle='rgba(0,0,0,.38)';
+  ctx.font='9px system-ui';
+  const nT=6;
+  for(let i=0;i<=nT;i++){
+    const xv=xMin+(xMax-xMin)*i/nT;
+    ctx.fillText(xv.toFixed(2),px(xv),base+30);
+  }
+
+  // border
+  ctx.strokeStyle='rgba(0,0,0,.07)';
+  ctx.lineWidth=1;
+  ctx.strokeRect(.5,.5,W-1,H-1);
+
+  return {beta,power,critX,critXL,intersectX,se};
+}
+
+// ── explanation ───────────────────────────────────────────────────────────────
+function explain(alpha,beta,power,d,n,se,critX,intersectX,tails){
+  const pct=v=>(v*100).toFixed(1)+'%';
+  const pw_class=power>=.8?'good':power>=.5?'warn':'bad';
+
+  const critvint=critX.toFixed(3),intvx=intersectX.toFixed(3);
+  const rel=critX<intersectX
+    ?`<b class="bad">a la izquierda</b> de la intersección (${critvint} &lt; ${intvx}), lo que implica <b class="bad">α &gt; β</b> — estás siendo más tolerante con el falso positivo que con el negativo.`
+    :critX>intersectX
+    ?`<b class="note">a la derecha</b> de la intersección (${critvint} &gt; ${intvx}), lo que implica <b class="note">α &lt; β</b> — eres más conservador pero pagas con más falsos negativos.`
+    :`<b>exactamente en la intersección</b> — α = β, ambos errores están perfectamente balanceados.`;
+
+  const sep=(d/se).toFixed(2);
+  const nHint=n<15?` Con n=${n} las curvas son muy anchas (SE=${se.toFixed(3)}) y se solapan bastante.`
+               :n>100?` Con n=${n} las curvas son muy angostas (SE=${se.toFixed(3)}) — gran separación.`
+               :``;
+
+  return `
+<b>Zona roja — α = ${pct(alpha)}:</b> Si H₀ fuera verdadera, rechazarías incorrectamente en 1 de cada ${Math.round(1/alpha)} experimentos. Es el precio que fijas al elegir un umbral de decisión.
+<span class="dot-sep">·</span>
+<b>Zona azul — β = ${pct(beta)}:</b> Si el efecto real es d = ${d.toFixed(2)} (detectabilidad δ/SE = ${sep}), no lo detectarías en ${pct(beta)} de los casos.
+<span class="dot-sep">·</span>
+<b>Zona verde — Potencia = <span class="${pw_class}">${pct(power)}</span>${power<.8?' (convención mínima: 80%)':''}:</b> Probabilidad de detectar correctamente el efecto cuando existe.${nHint}
+
+<div class="rel-box"><b>¿Qué es la intersección (punto naranja)?</b><br>
+Las dos curvas se cruzan en x = <b>${intvx}</b> (que es exactamente d/2 cuando ambas tienen el mismo σ). En ese punto, H₀ y H₁ generan la misma densidad de probabilidad para ese valor observado — <em>es el punto de máxima ambigüedad</em>. Cualquier observación a su izquierda "apoya más" a H₀; a su derecha, a H₁. Tu valor crítico está ${rel}</div>`;
+}
+
+// ── render ────────────────────────────────────────────────────────────────────
+function render(){
+  const res=draw();
+  if(!res)return;
+  const {beta,power,critX,intersectX,se}=res;
+  const pct=v=>(v*100).toFixed(1)+'%';
+  document.getElementById('da').textContent=pct(alpha);
+  document.getElementById('db').textContent=pct(beta);
+  document.getElementById('dp').textContent=pct(power);
+  document.getElementById('dc').textContent=critX.toFixed(4);
+  document.getElementById('exp').innerHTML=explain(alpha,beta,power,d,n,se,critX,intersectX,tails);
+}
+
+// ── sliders ───────────────────────────────────────────────────────────────────
+document.getElementById('sa').addEventListener('input',e=>{
+  alpha=+e.target.value;
+  document.getElementById('va').textContent=alpha.toFixed(3);
+  render();
+});
+document.getElementById('sd').addEventListener('input',e=>{
+  d=+e.target.value;
+  document.getElementById('vd').textContent=d.toFixed(2);
+  render();
+});
+document.getElementById('sn').addEventListener('input',e=>{
+  n=+e.target.value;
+  document.getElementById('vn').textContent=n;
+  render();
+});
+
+window.addEventListener('resize',()=>setTimeout(resize,60));
+setTimeout(resize,80);
+</script>
+</body>
+</html>
