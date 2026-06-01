@@ -1,0 +1,192 @@
+---
+title: "EP07"
+author: "Grupo 4"
+date: "2026-05-31"
+output: html_document
+---
+
+#### Ejercicio 1:
+Observando los datos, la memorista sospecha que hay diferencias significativas en el tiempo de ejecución entre las versiones B y C del algoritmo cuando las instancias tienen 65 o más nodos. ¿Los datos respaldan la intuición de la memorista?
+Para responder, filtren los datos para tener las instancias con 65 o más nodos y seleccionen las columnas de los tiempos de ejecución de las versiones B y C en formato ancho. Usando como semilla el valor 73, **obtenga muestras aleatorias independientes** de 24 tiempos registrados por la versión B y 20 tiempos registrados por la versión C del algoritmo. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar pruebas ómnibus y post-hoc según corresponda) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.
+
+```{r}
+library(dplyr)
+library(car) # homocedasticidad (leveneTest)
+
+datos = read.csv("EP07 Datos.csv", stringsAsFactors = TRUE)
+
+#filtrar por instancias que tienen mas de 65 o mas nodos y obtener una muestra aleatoria de 24 tiempos de B y 20 tiempos de C:
+
+set.seed(73)
+
+# Nos piden que sean MUESTRAS ALEATORIAS INDEPENDIENTES, 
+# Dado que una misma instancia tiene los 2 tiempos, hay que tener cuidado en como se filtra, dado que si no se tiene certeza de como se hace, podría convertirse en una muestra pareada... dado eso;
+
+# se filtra la población (24 de B + 20 de C = 44) y gracias a sample_n se obtiene un muestreo aleatorio.
+muestra_completa = datos |> filter(n.nodos >= 65) |> sample_n(44)
+
+# para garantizar que el conjunto de C intersectado con el conjunto de B sea el espacio nulo, nos ayudamos con "slice" que obtiene de la fila 1 a la 24 y para C de la 25 a la 44. Para luego seleccionar cada uno con el tiempo del algoritmo correspondiente;
+
+tiempo_B = muestra_completa |> slice(1:24) |> select(instancia, tiempo.B)
+tiempo_C = muestra_completa |> slice(25:44) |> select(instancia, tiempo.C)
+
+# verificar que no se repite ninguna muestra
+instancias_repetidas = intersect(tiempo_B$instancia, tiempo_C$instancia)
+instancias_repetidas
+
+```
+
+```{r}
+# Dado que shapiro.test() o wilcox.test() exigen vectores numéricos atómicos, se extraerán vectores;
+valores_B = tiempo_B |> pull(tiempo.B)
+valores_C = tiempo_C |> pull(tiempo.C)
+
+shapiro_B = shapiro.test(valores_B)
+shapiro_C = shapiro.test(valores_C)
+
+shapiro_B
+shapiro_C
+```
+Los valores arrojan un p-valor menor a un nivel de significancia estandar ($\alpha = 0.05$). Obtener p-valores de 0.04505 y 0.03383 (ambos $<\alpha = 0.05$) significa que se rechaza la hipótesis nula de las pruebas de Shapiro-Wilk. Los datos no siguen una distribución normal, por lo que un test t -Student aquí sería un error. Se hace cambio de flujo de ejecución: el flujo se bifurca obligatoriamente hacia el camino **no paramétrico**. Específicamente, utilizaremos la Prueba de Suma de Rangos de Wilcoxon (Mann-Whitney) para muestras independientes.
+
+```{r}
+# Dado que la normalidad falló, estamos obligados a usar la Prueba de Suma de Rangos de Wilcoxon (wilcox.test). Pero antes de ejecutarla, 
+
+# Para saber si se van a comparar medianas o si se va a comparar distribuciones generales (dominancia estocástica), se necesita mirar la geometría (forma) de los datos;
+library(ggpubr)
+
+# se construye dataframe
+datos_grafico = data.frame(tiempo = c(valores_B, valores_C), version = factor(c(rep("B", 24), rep("C", 20))))
+
+# histograma facetado
+p1 = gghistogram(datos_grafico, x = "tiempo", bins = 20,
+                  color = "version", fill = "version",
+                  xlab = "Tiempo de ejecución (ms)", ylab = "Frecuencia")
+p1 = p1 + facet_grid(~ version)
+p1
+```
+_"Si las dos formas son idénticas (mismo sesgo hacia la derecha, misma dispersión) y solo cambia la posición en el eje X La prueba de Wilcoxon comparará Medianas ($\tilde{\mu}_B \neq \tilde{\mu}_C$)."_
+
+Pero si las formas son distintas (un grupo está muy concentrado y el otro muy disperso o con deformaciones diferentes): No se puede hablar de medianas. La prueba evaluará si una versión del algoritmo tiende a tardar más tiempo en general que la otra (Dominancia Estocástica).
+
+Se logra visualizar que los tiempos de B y C son diferentes, siendo B un poco mas estocástico y el C siendo mas denso en un sector, estamos ante el segundo caso, pero para confirmar sin el error del instrumento de medición (ojo e interpretación humana) procedemos con un validador como la prueba de Kolmogorov-Smirnov (ks.test). Su hipótesis nula ($H_0$) dice: "Ambas muestras provienen de poblaciones con la misma distribución (misma forma)";
+```{r}
+# Evaluar si las distribuciones tienen la misma forma
+forma <- ks.test(valores_B, valores_C)
+forma
+```
+
+El p-valor de ks.test es de < 0.05, por lo que podemos decir que las formas son distintas. Las hipótesis definitivas hablarán de "tiempos de ejecución" generales.
+
+
+Confirmamos que, por lo tanto, la matemática del test de Wilcoxon pasa a evaluar la **Dominancia Estocástica**. La pregunta algorítmica que responde el test ya no es si los centros se movieron (Desplazamiento de Posición, teniendo exactamente la misma geometría, es porque estamos haciendo una diferencia de medianas.), sino:
+
+$$\text{¿La probabilidad de que un tiempo elegido al azar de la versión B sea mayor que un tiempo elegido al azar de la versión C es diferente de 0.5?}$$ (o sea, como tirar una moneda, es 50 y 50?)
+
+
+Si los dos algoritmos se comportan de forma equivalente en el tiempo (aunque sus formas sean raras o distintas), la probabilidad de que el tiempo de B sea mayor que el de C es exactamente de $0.5$ ($50\%$). 
+
+Es un juego justo, como lanzar una moneda al aire. Ningún algoritmo "domina" al otro en velocidad general. Si la probabilidad es distinta de $0.5$ (por ejemplo, $0.8$), significa que el juego está cargado: el algoritmo B sistemáticamente tiende a tardar más que el C. Hay Dominancia Estocástica.Por eso, cuando el ks.test dice que las formas son distintas, la hipótesis nula ($H_0$) ya no puede ser sobre las medianas. Pasa a ser:
+
+$$H_0: P(X_B > X_C) = 0.5$$
+__"La hipótesis nula plantea que la probabilidad de que un tiempo del Algoritmo B sea mayor que un tiempo del Algoritmo C es exactamente del cincuenta por ciento".__
+
+Ahora prosigue correr la prueba ómnibus de Wilcoxon para muestras independientes. Ella sumará los rangos y calculará el $p-valor$ real de los datos. Ese $p-valor$ de la prueba se comparará contra el $\alpha = 0.05$.
+```{r}
+# TEST FINAL (prueba ómnibus)
+
+prueba_final <- wilcox.test(valores_B, valores_C, paired = FALSE, alternative = "two.sided")
+prueba_final
+```
+El p-value de la prueba es $< 0.05$, por lo que se rechaza $H_0$, el duelo no es 50/50. 
+
+Los tiempos de ejecución generales entre las versiones B y C son significativamente distintos. Los datos respaldan la intuición de la memorista.
+
+
+Existe evidencia estadística suficiente ($W = 365$; $p = 0.0027$) para afirmar que los tiempos de ejecución de las versiones B y C del algoritmo para instancias con 65 o más nodos presentan diferencias significativas. Específicamente, los datos respaldan la intuición de la memorista, existiendo una relación de dominancia estocástica donde la versión B tiende sistemáticamente a requerir mayores tiempos de ejecución que la versión C ($P(X_B > X_C) > 0.5$).
+
+
+
+#### Ejercicio 3:
+La memorista sospecha que hay diferencias significativas en el tiempo de ejecución entre las versiones del algoritmo cuando las instancias de prueba tienen 50 o más nodos. ¿Los datos respaldan la intuición de la memorista?
+Para responder, filtren los datos para tener las instancias con 50 o más nodos y seleccionen las columnas con los tiempos de ejecución registrados (en formato ancho). Usando como semilla el valor 31, obtengan muestras aleatorias independientes de 15, 14 y 13 tiempos registrados por las versiones A, B y C, respectivamente. Realicen un análisis estadístico pertinente (enunciar hipótesis, revisar condiciones, seleccionar pruebas ómnibus y post-hoc según corresponda) para responder la pregunta planteada, utilizando pruebas no paramétricas de ser necesario.
+
+Aquí pasamos de comparar dos grupos a comparar tres grupos;
+
+Nos piden formato ancho (matriz relacional); una version compacta que formato largo.
+
+
+Se iniciara con prueba omnibus, que hace un test global que evalua a todos los grupos simultaneamente.
+- ($H_0$): Todos los grupos provienen de la misma poblacion (sin diferencias en ningun lado)
+- comportamiento: Nos dice SI existe alguna diferencia en alguna parte, pero incapaz de decir DONDE. Por eso, analizar si $p-valor \ge 0.05$ que nos dice que no hay diferencias, o  $p-valor < 0.05$ donde si hay, activando una segunda fase de comprobacion.
+- Si hay normalidad, omnibus con ANOVA, sino con Kruskal-Wallis.
+- Finalmente se aplica prueba post-hoc con Bonferroni ("BH") —principalmente por mantener el error tipo I global estrictamente en 0.05—.
+
+```{r}
+set.seed(31)
+
+#n = 15 + 14 + 13 = 42
+
+# población de >= 50 nodos con muestra en formato ancho
+muestra_3 = datos |> filter(n.nodos >= 50) |> sample_n(42)
+
+# slice para obtener los vectores con tiempos para A, B y C independientes.
+tiempo_A <- muestra_3 |> slice(1:15) |> pull(tiempo.A)
+tiempo_B <- muestra_3 |> slice(16:29) |> pull(tiempo.B)
+tiempo_C <- muestra_3 |> slice(30:42) |> pull(tiempo.C)
+
+# formato Largo para análisis multigrupo
+datos_3_largos <- data.frame(
+  tiempo = c(tiempo_A, tiempo_B, tiempo_C),
+  version = factor(c(rep("A", 15), rep("B", 14), rep("C", 13)))
+)
+```
+
+Lo que sigue es someter cada uno de los tres grupos a la prueba de Shapiro-Wilk de forma independiente. Si uno solo de los tres vectores falla en la normalidad, todo el flujo paramétrico (ANOVA) queda descartado y nos moveremos a la prueba ómnibus no paramétrica de Kruskal-Wallis.
+```{r}
+shapiro.test(tiempo_A)
+shapiro.test(tiempo_B)
+shapiro.test(tiempo_C)
+```
+La validación colapsó en primer nodo; tiempo_A arrojó $p-valor = 0.0145 < 0.05$, rechazando la hipótesis nula de normalidad. Un solo grupo no normal destruye la validez global de ANOVA. El árbol de decisión redirige obligatoriamente al camino no paramétrico multigrupo: la Prueba Ómnibus de Kruskal-Wallis.
+
+A diferencia de ANOVA, que opera con la varianza de las magnitudes continuas, Kruskal-Wallis transforma tus datos: toma los 42 tiempos de ejecución ($15 + 14 + 13$), los unifica en un solo arreglo ordenado y reemplaza cada tiempo por su rango (su posición del 1 al 42). El test evalúa si la suma de rangos de cada grupo difiere significativamente de la distribución uniforme esperada si las muestras provinieran de la misma población.
+
+---
+Dado que el grupo A no es normal, las formas geométricas de las tres distribuciones no son idénticas. Prohibiendo formular hipótesis sobre las "medianas". Por lo que las hipótesis deben redactarse en términos de distribuciones de tiempos generales.
+- $H_0$: Todas las versiones del algoritmo exhiben un comportamiento temporal similar para instancias con 50 o más nodos (las tres poblaciones provienen de distribuciones idénticas).
+- $H_A$: Al menos una de las versiones del algoritmo tiende a registrar tiempos de ejecución significativamente distintos en comparación con al menos otra versión.
+
+Para corroborar visualmente la asimetría antes del test, se genera un diagrama de cajas:
+```{r}
+# dispersión no paramétrica
+p3 <- ggboxplot(datos_3_largos, x = "version", y = "tiempo", fill = "version",
+                xlab = "Versión del Algoritmo", ylab = "Tiempo de ejecución (ms)")
+print(p3)
+```
+El diagrama de cajas revela un comportamiento temporal drásticamente diferente entre las tres versiones: el Algoritmo B destaca como el más lento al posicionar su mediana significativamente por encima de las demás (cerca de los $\(2 \times 10^6\)$ ms), mientras que el Algoritmo C se muestra como el más consistente y estable debido al diseño compacto y achatado de su caja. Por su parte, la versión A exhibe una alta inestabilidad por la gran dispersión de sus datos y una marcada asimetría positiva —evidenciada en su mediana desplazada hacia la base y su larguísimo bigote superior—, lo cual valida visualmente el colapso de la normalidad detectado por el test de Shapiro-Wilk $(p = 0.0145)$. Al ser las formas geométricas y variabilidades tan heterogéneas entre grupos, el gráfico respalda la hipótesis alternativa ($H_A$) de que las poblaciones provienen de distribuciones distantes, justificando plenamente abordar el análisis mediante la prueba ómnibus no paramétrica de Kruskal-Wallis.
+
+##### Ejecución de la Prueba Ómnibus
+```{r}
+# Para correr Kruskal-Wallis en R, la función exige la sintaxis de fórmula (variable_dependiente ~ variable_independiente) sobre estructura en formato largo.
+prueba_kruskal <- kruskal.test(tiempo ~ version, data = datos_3_largos)
+prueba_kruskal
+```
+
+$p-valor < 0.05$, por lo que se rechaza $H_0$. Se confirma que existe una anomalía, pero el ómnibus no dice dónde, $\therefore$  -> (Post-Hoc).
+
+Se ejecutaran comparaciones binarias emparejando los grupos (A vs B, B vs C, A vs C) mediante la función pairwise.wilcox.test(). A diferencia de ómnibus, esta función no acepta fórmulas; solo vectores crudos pasados como argumentos independientes.
+```{r}
+
+posthoc_3 <- pairwise.wilcox.test(datos_3_largos$tiempo, 
+                                  datos_3_largos$version, 
+                                  paired = FALSE, 
+                                  p.adjust.method = "BH")
+print(posthoc_3)
+```
+- B vs A: $p = 0.258 \ge \alpha \implies$ Fallo en rechazar $H_0$. No existe diferencia estadísticamente significativa en los tiempos generales.
+- C vs A: $p = 0.525 \ge \alpha \implies$ Fallo en rechazar $H_0$. No existe diferencia estadísticamente significativa en los tiempos generales.
+- C vs B: $p = 0.014 < \alpha \implies$ Rechazo de $H_0$. Existe una diferencia estadísticamente significativa en las distribuciones de tiempo.
+
+La prueba de Kruskal-Wallis indica que existen diferencias significativas en los tiempos de ejecución de al menos una versión del algoritmo ($\chi^2 = 6.51$, $p = 0.0386$). Al aplicar el procedimiento post-hoc de Wilcoxon con ajuste de Benjamini-Hochberg, no se detectaron diferencias significativas al comparar la versión A con la versión B ($p = 0.258$) ni con la versión C ($p = 0.525$). Sin embargo, se identificó que la versión B del algoritmo presenta diferencias temporales estadísticamente significativas al ser contrastada con la versión C ($p = 0.014$). Evaluando el comportamiento de los datos, se concluye con un 95% de confianza que existe una relación de dominancia estocástica donde la versión B tiende a requerir sistemáticamente mayores tiempos de ejecución que la versión C en instancias con 50 o más nodos, respaldando parcialmente la sospecha de la memorista
+

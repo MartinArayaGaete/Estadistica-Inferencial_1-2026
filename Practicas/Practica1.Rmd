@@ -1,0 +1,75 @@
+---
+title: "PracticaPEP"
+author: "Martín Araya, Benjamín Letelier"
+date: "2026-05-26"
+output: html_document
+---
+
+## Enunciado 1
+####Contexto: 
+Un equipo de desarrollo web quiere saber si el tiempo de carga de su página de inicio (en milisegundos) varía dependiendo del navegador que usen los clientes. Han tomado una muestra aleatoria de 40 sesiones usando Google Chrome y 40 sesiones usando Mozilla Firefox en computadoras con características idénticas.
+Los datos están en un archivo llamado tiempos_carga.csv que contiene dos columnas: Navegador (Chrome, Firefox) y Tiempo (numérico continuo).
+
+####Pregunta: ¿Existe evidencia estadística para afirmar que el tiempo de carga es distinto entre ambos navegadores?
+
+```{r}
+library(dplyr)
+
+
+datos = read.csv("tiempos_carga.csv", stringsAsFactors = TRUE)
+
+datos_chrome = filter(datos, Navegador == "Chrome")
+datos_firefox = filter(datos, Navegador == "Firefox")
+```
+
+H0 = Los navegadores chrome y firefox no presentan diferencias significativas en el tiempo de carga de sus paginas de inicio. Matemáticamente hablando, si $\mu$ representa el tiempo promedio de carga de la página de inicio, entonces $\mu_{Chrome}≈\mu_{Firefox}$
+Ha = Los tiempos de carga de las páginas de inicio de los navegadores son distintas. Matemáticamente hablando, $\mu_{Chrome} \neq \mu_{Firefox}$
+
+
+Dado que se busca comparar las medias de los grupos, lo ideal sería utilizar ANOVA de una vía para muestras independientes. Para ello, es necesario verificar las siguientes condiciones:
+
+- La escala con que se mide la variable tiempo es numérica discreta, y está medida en milisegundos, considerando solo 1 decimal, por lo que no hay problemas de escala entre cada medición.
+
+- Las muestras fueron obtenidas de manera aleatoria e independiente desde las poblaciones de origen.
+
+- Se verifica que los datos siguen una distribución normal
+
+```{r}
+shapiro.test(datos_chrome[["Tiempo"]])
+shapiro.test(datos_firefox[["Tiempo"]])
+```
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+# Se elabora un gráfico Q-Q
+paleta <- colorRampPalette(c("lightblue", "steelblue", "midnightblue"))(3)
+g1 <- ggqqplot(datos, x = "Tiempo", y = "Navegador", color = "Navegador", palette = paleta)
+
+g1 <- g1 + facet_wrap(~ Navegador)
+g1 <- g1 + rremove("x.ticks") + rremove("x.text")
+g1 <- g1 + rremove("y.ticks") + rremove("y.text")
+g1 <- g1 + rremove("axis.title") + rremove("legend")
+print(g1)
+```
+Dado que ambos muestras se encuentran "practicamente" dentro de las curvas, y el shapiro-test entrega un resultado mayor a nuestro $\alpha = 0.05$, gracias al grafico se denota una leve tendencia a ser una curva por parte de Firefox, por lo tanto, se decide aumentar nuestro nivel de significancia a algo mas estricto ($\alpha = 0.01$).
+
+
+- La última condición consiste en verificar la homocedasticidad, pero la prueba ezANOVA() ya se encarga de esta tarea, aplicando la prueba de Levene.
+
+
+Por lo tanto, procedemos a realizar la prueba ANOVA:
+
+
+```{r}
+
+# El pipe pasa "datos" automáticamente como primer argumento de mutate
+datos = datos |> mutate(instancia = factor(1:n()))
+
+prueba_anova <- ezANOVA(data = datos, dv = Tiempo, wid = instancia, between = Navegador, return_aov = TRUE, detailed = TRUE)
+
+print(prueba_anova)
+```
+Luego de aplicar la prueba ezANOVA(), se puede observar que la prueba de homogeneidad de Levene a resultado favorable sobre la suposición de homocedasticidad, dado que el p-value obtenido fue de 0.2385038. Asimismo, la prueba ha sido significativa, obteniendo un p-value = 2.591867e-05, lo que es mucho menor que el nivel de siginificancia establecido ($\alpha = 0.01$) por lo que se rechaza la hipótesis nula en favor de la alternativa, pudiendo concluir que el tiempo medio de respuesta de los navegadores es distinto.
+
+Ahora interesa saber cómo se relacionan estas medias entre sí, saber qué país tiene la menor media, o la mayor, por lo que se aplicará un procedimimento post-hoc que nos ayude a determinar dicha información. Primero realizaremos una inspección visual, y si esta no es concluyente, acudiremos a otros métodos de análisis post-hoc.
+
+
+
