@@ -11,8 +11,71 @@ output: html_document
 
 ### Ejercicio 1:
 ¿Será cierto que hay **más** atletas provenientes de la zona Centro-Sur que redujeron sus mejores marcas en al menos 4,3 segundos que atletas de la zona Sur que lo hicieron en al menos 1,4 segundos luego del entrenamiento?
-```{r}
-datos = read.csv2("EP02 Datos.csv", stringAsFactors = TRUE)
 
+- Naturaleza geométrica de la variable respuesta: Categórica binaria (Éxito: cumple la reducción de tiempo requerida para su zona / Fracaso: no la cumple).
+
+- Cantidad de grupos a comparar: 2 grupos independientes (Atletas de la zona Centro-Sur vs. Atletas de la zona Sur).
+
+- Relación de los sujetos: Independientes. Un atleta pertenece a una zona o a la otra, no hay solapamiento ni emparejamiento.
+
+- Ramificación del árbol de decisión: Prueba de hipótesis para dos proporciones independientes ($Z$-test de dos proporciones).
+
+```{r}
+datos = read.csv2("EP02 Datos.csv", stringsAsFactors = TRUE)
+
+atletas_cs = filter((datos %>% mutate(Exito = (Previo - Posterior >= 4.3))), Zona == "Centro-Sur")
+atletas_s = filter((datos %>% mutate(Exito = (Previo - Posterior >= 1.4))), Zona == "Sur")
+
+# para seguir una proporcion y cumplir con;
+
+# Para que el test de proporciones basado en la distribución normal (Z-test) 
+# sea válido, se requiere que la cantidad de éxitos y fracasos esperados en 
+# cada grupo sea al menos 5.
+
+numExitos_cs = sum(atletas_cs$Exito == TRUE)
+numAtletas_cs = nrow(atletas_cs)
+  
+numExitos_s = sum(atletas_s$Exito == TRUE)
+numAtletas_s = nrow(atletas_s)
+
+frecuencias_control <- c(numExitos_cs, numAtletas_cs - numExitos_cs, numExitos_s, numAtletas_s - numExitos_s)
+frecuencias_control
 ```
+
+Entonces, ¿Las frecuencias esperadas en todas las celdas son ≥ 5?, **NO**, dado que, una celda tiene frecuencia esperada < 5, chi-cuadrado/test Z no son confiables. Justamente la celda "numAtletas_cs - numExitos_cs" que contaria LOS FRACASOS de atletas del centro sur... Asi que eso nos perjudicria con nuestra hipotesis alternativa. Habrá que aplicar una "Prueba exacta de Fisher" con  alternative = "greater"
+
+```{r}
+# ==============================================================================
+# BIFURCACIÓN NO PARAMÉTRICA: PRUEBA EXACTA DE FISHER
+# ==============================================================================
+
+# 1. Construcción limpia de la matriz de contingencia 2x2
+# Estructura: Filas = Grupos (Centro-Sur, Sur), Columnas = Condición (Éxitos, Fracasos)
+tabla_contingencia <- matrix(
+  c(numExitos_cs, numAtletas_cs - numExitos_cs,   # Fila 1: Centro-Sur (Éxitos = 26, Fracasos = 1)
+    numExitos_s, numAtletas_s - numExitos_s), # Fila 2: Sur (Éxitos = 28, Fracasos = 11)
+  nrow = 2, 
+  byrow = TRUE
+)
+
+# Nombrar dimensiones para asegurar la trazabilidad del output en la consola
+rownames(tabla_contingencia) <- c("Centro-Sur", "Sur")
+colnames(tabla_contingencia) <- c("Exitos", "Fracasos")
+tabla_contingencia
+
+# 2. Ejecución del Test Exacto
+#¿Será cierto que la proporción de éxitos en la zona Centro-Sur es mayor que en la zona Sur?
+
+# se traduce en dos hipótesis:
+# - Hipótesis Nula Ho: Ambas zonas tienen la misma proporción de éxito.
+# - Hipótesis Alternativa H1: La proporción de Centro-Sur es mayor (>) que la de Sur.
+
+# "Dado que la pregunta de investigación busca determinar si la proporción de atletas exitosos provenientes de la zona Centro-Sur es mayor que la de la zona Sur, se configura una prueba de hipótesis de una sola cola (unilateral derecha). Al estar la zona Centro-Sur posicionada en la primera fila de la matriz de contingencia, el parámetro alternative = "greater" es mandatorio en R, ya que evalúa matemáticamente si el Odds Ratio es estadísticamente superior a 1."
+
+resultado_fisher <- fisher.test(tabla_contingencia, alternative = "greater")
+
+print("=== Resultado de la Inferencia Exacta ===")
+print(resultado_fisher)
+```
+
 
