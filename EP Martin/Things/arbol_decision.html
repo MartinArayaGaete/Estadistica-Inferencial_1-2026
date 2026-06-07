@@ -643,10 +643,19 @@ const TREE = {
   catSize2:{
     badge:"Verificar frecuencias esperadas",
     q:"¿Las frecuencias esperadas en todas las celdas son ≥ 5?",
-    hint:"Si alguna celda tiene frecuencia esperada < 5, chi-cuadrado no es confiable.",
+    hint:"Si alguna celda tiene frecuencia esperada < 5, chi-cuadrado/test Z no son confiables.",
     opts:[
-      {label:"Sí — todas las celdas con frec. esperada ≥ 5", next:"res_chisq2", crumb:"Frec. suficiente"},
+      {label:"Sí — todas las celdas con frec. esperada ≥ 5", next:"catHypothesis2", crumb:"Frec. suficiente"},
       {label:"No — hay celdas con frec. esperada < 5", next:"res_fisher", crumb:"Muestra pequeña"}
+    ]
+  },
+  catHypothesis2:{
+    badge:"Direccionalidad",
+    q:"¿La hipótesis alternativa (H_A) es unilateral (direccional) o bilateral?",
+    hint:"Unilateral: evaluar si un grupo es mayor que el otro (p1 > p2 o p1 < p2).\nBilateral: evaluar si existe alguna diferencia en general (p1 ≠ p2).",
+    opts:[
+      {label:"Bilateral (no direccional) — probar si hay diferencia o asociación", next:"res_chisq2", crumb:"Bilateral"},
+      {label:"Unilateral (direccional) — probar si un grupo es específicamente mayor/menor", next:"res_z_prop", crumb:"Unilateral"}
     ]
   },
   catIndep3:{
@@ -875,7 +884,19 @@ const TREE = {
       "Observaciones independientes",
       "Frecuencias esperadas ≥ 5 en todas las celdas"
     ],
-    note:null
+    note:"Para una tabla de 2×2, el test de Chi-cuadrado y el test Z de dos proporciones (prop.test) son matemáticamente equivalentes (el estadístico X² es el cuadrado de Z). Sin embargo, si tu hipótesis de investigación es unilateral (p1 > p2 o p1 < p2), debes usar el Test Z de proporciones (prop.test) con su parámetro alternative para habilitar la direccionalidad de forma nativa."
+  },
+  res_z_prop:{
+    result:true, cls:"c",
+    tag:"Proporciones · 2 grupos independientes",
+    name:"Test Z de dos proporciones\n(Prueba de diferencia de proporciones)",
+    rfunc:'prop.test(x = c(exitos_g1, exitos_g2), n = c(n1, n2),\n  alternative = "greater", correct = TRUE)',
+    conds:[
+      "Variables categóricas dicotómicas (Éxito/Fracaso)",
+      "Grupos independientes entre sí",
+      "Frecuencias esperadas ≥ 5 en todas las celdas (n·p ≥ 5 y n·(1-p) ≥ 5)"
+    ],
+    note:"La función prop.test() en R realiza esta prueba. Para hipótesis unilaterales, usa el parámetro alternative = 'greater' (si p1 > p2) o alternative = 'less' (si p1 < p2). Matemáticamente, el estadístico de Chi-cuadrado de Pearson de una tabla 2x2 es exactamente el cuadrado del estadístico Z (X² = Z²), por lo que para hipótesis bilaterales son idénticos."
   },
   res_fisher:{
     result:true, cls:"c",

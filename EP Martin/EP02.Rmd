@@ -39,7 +39,7 @@ if(!require(TeachingDemos)) install.packages("TeachingDemos")
 
 # 1. Lectura y preparación de datos
 # ------------------------------------------
-datos <- read.csv2("EP02 Datos.csv", stringsAsFactors = TRUE, sep = ";")
+datos <- read.csv2("Practica/EP's/EP02 Datos.csv", stringsAsFactors = TRUE, sep = ";")
 ```
 
 ```{r}

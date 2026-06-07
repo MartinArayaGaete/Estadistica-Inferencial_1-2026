@@ -1,0 +1,18 @@
+---
+title: "EP02"
+author: "Martin"
+date: "2026-06-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+```
+
+### Ejercicio 1:
+¿Será cierto que hay **más** atletas provenientes de la zona Centro-Sur que redujeron sus mejores marcas en al menos 4,3 segundos que atletas de la zona Sur que lo hicieron en al menos 1,4 segundos luego del entrenamiento?
+```{r}
+datos = read.csv2("EP02 Datos.csv", stringAsFactors = TRUE)
+
+```
+

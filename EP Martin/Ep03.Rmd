@@ -8,7 +8,7 @@ output: html_document
 if(!require(dplyr)) install.packages("dplyr") #Para filtrar/leer excel
 if(!require(ggplot2)) install.packages("ggplot2") #Para graficar
 if(!require(ggpubr)) install.packages("ggpubr") #gghistogram y ggscatter
-if(!require(ggpattern)) install.packages("ggpubr")
+if(!require(ggpattern)) install.packages("ggpattern")
 if(!require(pwr)) install.packages("pwr")
 
 library(ggplot2)
