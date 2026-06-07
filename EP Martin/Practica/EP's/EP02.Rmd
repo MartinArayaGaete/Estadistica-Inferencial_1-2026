@@ -6,7 +6,9 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-
+library(car)
+library(tidyverse)
+library(rstatix)
 ```
 
 ### Ejercicio 1:
@@ -19,6 +21,13 @@ output: html_document
 - Relación de los sujetos: Independientes. Un atleta pertenece a una zona o a la otra, no hay solapamiento ni emparejamiento.
 
 - Ramificación del árbol de decisión: Prueba de hipótesis para dos proporciones independientes ($Z$-test de dos proporciones).
+
+Formulación Matemática de Hipótesis: 
+
+Definimos $p_{CS}$ como la proporción poblacional de éxitos en la zona Centro-Sur y $p_{S}$ como la proporción poblacional de éxitos en la zona Sur.
+
+$$H_0: p_{CS} \le p_{S}$$$$
+H_A: p_{CS} > p_{S}$$
 
 ```{r}
 datos = read.csv2("EP02 Datos.csv", stringsAsFactors = TRUE)
@@ -38,12 +47,10 @@ numAtletas_cs = nrow(atletas_cs)
 numExitos_s = sum(atletas_s$Exito == TRUE)
 numAtletas_s = nrow(atletas_s)
 
-frecuencias_control <- c(numExitos_cs, numAtletas_cs - numExitos_cs, numExitos_s, numAtletas_s - numExitos_s)
-frecuencias_control
+frecuencias_observadas <- c(numExitos_cs, numAtletas_cs - numExitos_cs, numExitos_s, numAtletas_s - numExitos_s)
+frecuencias_observadas
 ```
-
-Entonces, ¿Las frecuencias esperadas en todas las celdas son ≥ 5?, **NO**, dado que, una celda tiene frecuencia esperada < 5, chi-cuadrado/test Z no son confiables. Justamente la celda "numAtletas_cs - numExitos_cs" que contaria LOS FRACASOS de atletas del centro sur... Asi que eso nos perjudicria con nuestra hipotesis alternativa. Habrá que aplicar una "Prueba exacta de Fisher" con  alternative = "greater"
-
+Para validar la aproximación asintótica a la normal a través de un test $Z$ de dos proporciones (prop.test), se requiere que la frecuencia de éxitos y fracasos observados en cada casilla sea $\ge 5$. Al examinar el vector de frecuencias muestrales, el grupo Centro-Sur registra únicamente $1$ fracaso ($numAtletas\_cs - numExitos\_cs = 1$). Debido a este tamaño muestral insuficiente en la categoría de control, la aproximación de la distribución muestral a una curva normal estándar pierde total validez y simetría. Por lo tanto, el test $Z$ queda descartado y se deriva obligatoriamente a la Prueba Exacta de Fisher, la cual calcula la probabilidad exacta bajo la distribución hipergeométrica sin requerir supuestos asintóticos.
 ```{r}
 # ==============================================================================
 # BIFURCACIÓN NO PARAMÉTRICA: PRUEBA EXACTA DE FISHER
@@ -61,6 +68,8 @@ tabla_contingencia <- matrix(
 # Nombrar dimensiones para asegurar la trazabilidad del output en la consola
 rownames(tabla_contingencia) <- c("Centro-Sur", "Sur")
 colnames(tabla_contingencia) <- c("Exitos", "Fracasos")
+
+print("=== Matriz de Contingencia Analítica ===")
 tabla_contingencia
 
 # 2. Ejecución del Test Exacto
@@ -71,11 +80,14 @@ tabla_contingencia
 # - Hipótesis Alternativa H1: La proporción de Centro-Sur es mayor (>) que la de Sur.
 
 # "Dado que la pregunta de investigación busca determinar si la proporción de atletas exitosos provenientes de la zona Centro-Sur es mayor que la de la zona Sur, se configura una prueba de hipótesis de una sola cola (unilateral derecha). Al estar la zona Centro-Sur posicionada en la primera fila de la matriz de contingencia, el parámetro alternative = "greater" es mandatorio en R, ya que evalúa matemáticamente si el Odds Ratio es estadísticamente superior a 1."
-
-resultado_fisher <- fisher.test(tabla_contingencia, alternative = "greater")
+# 
+resultado_fisher = fisher.test(tabla_contingencia, alternative = "greater")
 
 print("=== Resultado de la Inferencia Exacta ===")
-print(resultado_fisher)
+resultado_fisher
 ```
+Al ejecutar la Prueba Exacta de Fisher, se obtiene un valor $p = 0.001391$. Fijando un nivel de significación de $\alpha = 0.05$, se observa que:
 
+$$p\text{-value} = 0.001391 < \alpha = 0.05$$
+Dado que el valor $p$ es estrictamente menor que el umbral establecido, el estadístico muestral cae dentro de la región de rechazo (zona crítica). La decisión matemática es rechazar la hipótesis nula ($H_0$) en favor de la hipótesis alternativa ($H_A$).En el contexto del problema, se concluye con total respaldo estadístico que la proporción de atletas de la zona Centro-Sur que redujeron sus mejores marcas en al menos 4.3 segundos es significativamente mayor que la proporción de atletas de la zona Sur que redujeron sus marcas en al menos 1.4 segundos (con un Odds Ratio muestral de $\approx 16.07$). Los datos muestrales recopilados por el Comité Olímpico soportan de manera robusta la sospecha planteada.
 
