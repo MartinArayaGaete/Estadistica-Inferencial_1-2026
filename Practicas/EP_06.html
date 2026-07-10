@@ -357,7 +357,8 @@ display: none;
 </div>
 
 
-<pre class="r"><code>datos = read.csv(&quot;EP06 Datos.csv&quot;, stringsAsFactors = TRUE)</code></pre>
+<pre class="r"><code>datos = read.csv(&quot;EP06 Datos.csv&quot;, stringsAsFactors = TRUE)
+datos$id = factor(datos$id) </code></pre>
 <p>En este momento, los investigadores buscan determinar si existen
 diferencias en el tiempo que tardan los usuarios en formular consultas
 para problemas con diferente nivel de dificultad en el área de
@@ -371,13 +372,110 @@ música.</p>
 <pre><code>## The following objects are masked from &#39;package:base&#39;:
 ## 
 ##     intersect, setdiff, setequal, union</code></pre>
-<pre class="r"><code>usuarios_musica = filter(datos, area == &#39;Música&#39;)</code></pre>
-<p>Dado que es el mismo usuario quien hace la investigacion en
-diferentes dificultades, estamos ante una muestra pareada.</p>
+<pre class="r"><code>usuarios_musica = filter(datos, area == &#39;Música&#39;)
+
+usuarios_musica_baja = filter(usuarios_musica, dificultad == &quot;Baja&quot;)
+usuarios_musica_media = filter(usuarios_musica, dificultad == &quot;Media&quot;)
+usuarios_musica_alta = filter(usuarios_musica, dificultad == &quot;Alta&quot;)</code></pre>
 <p><span class="math inline">\(H_0\)</span> = No existe una diferencia
-significativa en los tiempos de resolucion a los problemas segun su
+significativa en los tiempos de resolución a los problemas según su
 dificultad (<span class="math inline">\(\mu_{bajo} = \mu_{medio} =
-\mu_{alto}\)</span>)</p>
+\mu_{alto}\)</span>) <span class="math inline">\(H_a\)</span> = Existe
+una diferencia significativa en al menos un tiempo de resolución de los
+problemas según su dificultad (<span class="math inline">\(\mu_{bajo}
+\neq \mu_{medio} \neq \mu_{alto}\)</span>)</p>
+<p>Dado que es el mismo usuario quien hace la investigacion en
+diferentes dificultades, estamos ante una muestra pareada, por lo que se
+plantea el uso de Anova de muestras pareadas.</p>
+<p>Antes de continuar, se necesita verificar su - Normalidad -
+Independencia entre sujetos - Esfericidad</p>
+<pre class="r"><code># prueba de normalidad
+shapiro.test(usuarios_musica_baja$tiempo)</code></pre>
+<pre><code>## 
+##  Shapiro-Wilk normality test
+## 
+## data:  usuarios_musica_baja$tiempo
+## W = 0.99003, p-value = 0.1805</code></pre>
+<pre class="r"><code>shapiro.test(usuarios_musica_media$tiempo)</code></pre>
+<pre><code>## 
+##  Shapiro-Wilk normality test
+## 
+## data:  usuarios_musica_media$tiempo
+## W = 0.99441, p-value = 0.6618</code></pre>
+<pre class="r"><code>shapiro.test(usuarios_musica_alta$tiempo)</code></pre>
+<pre><code>## 
+##  Shapiro-Wilk normality test
+## 
+## data:  usuarios_musica_alta$tiempo
+## W = 0.99307, p-value = 0.4689</code></pre>
+<p>dado que todas las — dieron mayor al nivel de la —, se cumple con la
+—</p>
+<pre class="r"><code>library(ez)</code></pre>
+<pre><code>## Registered S3 method overwritten by &#39;lme4&#39;:
+##   method           from
+##   na.action.merMod car</code></pre>
+<pre class="r"><code>resultado = ezANOVA(usuarios_musica, dv = tiempo, wid = id, within = dificultad, detailed = TRUE)</code></pre>
+<pre><code>## Warning: You have removed one or more Ss from the analysis. Refactoring &quot;id&quot;
+## for ANOVA.</code></pre>
+<pre class="r"><code>print(resultado)</code></pre>
+<pre><code>## $ANOVA
+##        Effect DFn DFd        SSn      SSd          F             p p&lt;.05
+## 1 (Intercept)   1 199 4703244.81 12625.86 74129.2646 6.435808e-258     *
+## 2  dificultad   2 398   22425.08 23668.25   188.5476  2.483581e-58     *
+##         ges
+## 1 0.9923423
+## 2 0.3819038
+## 
+## $`Mauchly&#39;s Test for Sphericity`
+##       Effect         W         p p&lt;.05
+## 2 dificultad 0.9966417 0.7167512      
+## 
+## $`Sphericity Corrections`
+##       Effect      GGe        p[GG] p[GG]&lt;.05     HFe        p[HF] p[HF]&lt;.05
+## 2 dificultad 0.996653 3.805277e-58         * 1.00672 2.483581e-58         *</code></pre>
+<p>Se rechaza la hipotesis nula, por lo que se procede al analisis post
+hoc</p>
+<pre class="r"><code>library(emmeans)</code></pre>
+<pre><code>## Welcome to emmeans.
+## Caution: You lose important information if you filter this package&#39;s results.
+## See &#39;? untidy&#39;</code></pre>
+<pre class="r"><code># 2. Reconstrucción del modelo lineal para medidas repetidas (equivalente a tu ezANOVA)
+# Especificamos el término de error intra-sujeto: Error(id/dificultad)
+modelo_aov &lt;- aov(tiempo ~ dificultad + Error(id / dificultad), data = usuarios_musica)
+
+# 3. Cálculo de Medias Marginales Estimadas (EMMs)
+emm_dificultad &lt;- emmeans(modelo_aov, ~ dificultad)</code></pre>
+<pre><code>## Note: re-fitting model with sum-to-zero contrasts</code></pre>
+<pre class="r"><code># 4. Contraste de pares (Tukey) con penalización secuencial de Holm
+post_hoc_emmeans &lt;- contrast(emm_dificultad, method = &quot;pairwise&quot;, adjust = &quot;holm&quot;)
+
+# 5. Despliegue de resultados
+print(post_hoc_emmeans)</code></pre>
+<pre><code>##  contrast     estimate    SE  df t.ratio p.value
+##  Alta - Baja     13.90 0.771 398  18.025 &lt;0.0001
+##  Alta - Media    11.78 0.771 398  15.269 &lt;0.0001
+##  Baja - Media    -2.12 0.771 398  -2.756  0.0061
+## 
+## P value adjustment: holm method for 3 tests</code></pre>
+<p>Basado en el análisis ómnibus de medidas repetidas (<span class="math inline">\(F(2, 398) = 188.55, p &lt; 0.0001\)</span>) y el
+subsecuente blindaje post-hoc con corrección de Holm, se concluye de
+manera estadísticamente significativa que el nivel de dificultad de los
+problemas musicales altera de forma sistemática el tiempo que los
+usuarios invierten en formular sus consultas.El comportamiento del
+sistema humano/interfaz se segmenta en un ordenamiento jerárquico
+estricto y lineal de tiempos de resolución de la forma: <span class="math display">\[\mu_{\text{Baja}} &lt; \mu_{\text{Media}} &lt;
+\mu_{\text{Alta}}\]</span> El peor escenario adaptativo ocurre ante
+problemas de dificultad Alta, donde los usuarios registran el mayor
+retraso en la formulación de consultas (superando en <span class="math inline">\(\approx 13.90\)</span> unidades de tiempo a los
+problemas fáciles y en <span class="math inline">\(\approx
+11.78\)</span> a los intermedios).Incluso la transición incremental más
+sutil (de dificultad Baja a Media) introduce una penalización temporal
+medible y significativa de <span class="math inline">\(\approx
+2.12\)</span> unidades de tiempo.No existen zonas de estancamiento o
+igualdad en la experiencia del usuario respecto a la complejidad del
+problema. Cada incremento en la dificultad del dominio musical escala
+directamente el costo algorítmico cognitivo medido en tiempo de
+respuesta.</p>
 <p>Propongan una pregunta de investigación relacionada al uso de
 asistentes de programación basados en inteligencia artificial que
 necesite ser analizado por medio de un procedimiento ANOVA para muestras
