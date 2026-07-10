@@ -1,0 +1,27 @@
+---
+title: "EP06"
+author: "Martin y benja"
+date: "2026-07-10"
+output: html_document
+---
+
+
+```{r}
+datos = read.csv("EP06 Datos.csv", stringsAsFactors = TRUE)
+```
+
+En este momento, los investigadores buscan determinar si existen diferencias en el tiempo que tardan los usuarios en formular consultas para problemas con diferente nivel de dificultad en el área de música.
+
+```{r}
+library(dplyr)
+
+usuarios_musica = filter(datos, area == 'Música')
+```
+
+Dado que es el mismo usuario quien hace la investigacion en diferentes dificultades, estamos ante una muestra pareada. 
+
+$H_0$ = No existe una diferencia significativa en los tiempos de resolucion a los problemas segun su dificultad ($\mu_{bajo} = \mu_{medio} = \mu_{alto}$)
+
+
+
+Propongan una pregunta de investigación relacionada al uso de asistentes de programación basados en inteligencia artificial que necesite ser analizado por medio de un procedimiento ANOVA para muestras correlacionadas con un factor que tenga entre 4 y 6 niveles. Luego invente una población para cada grupo con 5.000 datos, asegurando que cumpla las suposiciones de esta prueba.

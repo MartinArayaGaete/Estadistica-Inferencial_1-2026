@@ -22,8 +22,8 @@ datos_chrome = filter(datos, Navegador == "Chrome")
 datos_firefox = filter(datos, Navegador == "Firefox")
 ```
 
-H0 = Los navegadores chrome y firefox no presentan diferencias significativas en el tiempo de carga de sus paginas de inicio. Matemáticamente hablando, si $\mu$ representa el tiempo promedio de carga de la página de inicio, entonces $\mu_{Chrome}≈\mu_{Firefox}$
-Ha = Los tiempos de carga de las páginas de inicio de los navegadores son distintas. Matemáticamente hablando, $\mu_{Chrome} \neq \mu_{Firefox}$
+$H_0$ = Los navegadores chrome y firefox no presentan diferencias significativas en el tiempo de carga de sus paginas de inicio. Matemáticamente hablando, si $\mu$ representa el tiempo promedio de carga de la página de inicio, entonces $\mu_{Chrome}≈\mu_{Firefox}$
+$H_a$ = Los tiempos de carga de las páginas de inicio de los navegadores son distintas. Matemáticamente hablando, $\mu_{Chrome} \neq \mu_{Firefox}$
 
 
 Dado que se busca comparar las medias de los grupos, lo ideal sería utilizar ANOVA de una vía para muestras independientes. Para ello, es necesario verificar las siguientes condiciones:
@@ -40,6 +40,8 @@ shapiro.test(datos_firefox[["Tiempo"]])
 ```
 ```{r, echo = FALSE, message=FALSE, warning=FALSE}
 # Se elabora un gráfico Q-Q
+library(ggplot2)
+
 paleta <- colorRampPalette(c("lightblue", "steelblue", "midnightblue"))(3)
 g1 <- ggqqplot(datos, x = "Tiempo", y = "Navegador", color = "Navegador", palette = paleta)
 
@@ -48,6 +50,7 @@ g1 <- g1 + rremove("x.ticks") + rremove("x.text")
 g1 <- g1 + rremove("y.ticks") + rremove("y.text")
 g1 <- g1 + rremove("axis.title") + rremove("legend")
 print(g1)
+
 ```
 Dado que ambos muestras se encuentran "practicamente" dentro de las curvas, y el shapiro-test entrega un resultado mayor a nuestro $\alpha = 0.05$, gracias al grafico se denota una leve tendencia a ser una curva por parte de Firefox, por lo tanto, se decide aumentar nuestro nivel de significancia a algo mas estricto ($\alpha = 0.01$).
 

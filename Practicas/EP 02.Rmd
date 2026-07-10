@@ -1,0 +1,48 @@
+---
+title: "EP_1 practica"
+author: "Martin y benja"
+date: "2026-07-09"
+output: html_document
+---
+
+##### El Comité Olímpico cree que el mejor tiempo medio de atletas que provienen de la zona Sur es superior a 14,9 segundos después del entrenamiento. ¿Soportan los datos esta afirmación?
+
+```{r}
+library(dplyr)
+
+datos = read.csv2("EP02 Datos.csv", stringsAsFactor = TRUE)
+atletas_zonaSur = filter(datos, Zona == "Sur")
+```
+
+$H_0$ = Los tiempos promedio de los atletas después del entrenamiento son menores o iguales a 14,9 segundos
+$H_a$ = Los tiempos promedio de los atletas después del entrenamiento son mayores a 14,9 segundos
+
+Para verificar la afirmación, se debe confirmar que los datos cumplen con;
+
+- Independencia (los datos son observaciones de una muestra aleatoria de atletas)
+- Normalidad
+
+```{r}
+shapiro.test(atletas_zonaSur[["Posterior"]])
+```
+
+Dado que $p_{value}$ = 0.2225 > $\alpha$ = 0.05, podemos decir que se cumple con la normalidad de los datos.
+
+Se procede a aplicar T Student dado que se cumplen las condiciones requeridas.
+
+```{r}
+mu = 14.9
+t.test(atletas_zonaSur$Posterior, mu = mu, alternative = "greater", conf.level = 0.95)
+```
+
+Dado el p_value = 1 mayor que el nivel de significancia establecido de 0.05, no existe ninguna base estadística para rechazar la hipótesis nula, y por ende, el comité Olímpico se equivoca al no recibir soporte por parte de los datos. 
+
+Lo real seria decir que el tiempo de los atletas promedio es de 12.55s
+
+
+
+¿Es posible afirmar que, en promedio, atletas que provienen de la zona Sur superan a los provenientes de la zona Centro-Sur por más de 5,8 segundos antes del entrenamiento?
+
+
+¿Sugieren los datos que, en promedio, atletas provenientes de la zona Sur ven reducida su mejor marca en menos de 1,3 segundos tras el entrenamiento?
+¿Será cierto que hay más atletas provenientes de la zona Centro-Sur que redujeron sus mejores marcas en al menos 4,8 segundos que atletas de la zona Centro-Norte que lo hicieron en al menos 3,2 segundos luego del entrenamiento?

@@ -1,0 +1,115 @@
+---
+title: "EP_05"
+author: "Martin y benja"
+date: "2026-07-09"
+output: html_document
+---
+
+[Actividades
+En una emocionante competencia de cubos Rubik, participantes de Chile, Argentina, Colombia, Uruguay, Perú y Ecuador demostraron su destreza en resolver tres tipos de cubos: 2x2x2, 3x3x3 y Megaminx.
+
+Después del Campeonato Mundial del Cubo, un grupo de investigación interesado en los tiempos que hicieron las jugadoras y los jugadores en la competencia, decidieron estudiar si el país y el tipo de cubo usado en cada prueba tienen influencia en los segundos que se tardan en resolverlos. Para ello usaron una muestra aleatoria de los datos de la competencia, en la cual participaron más de 10.000 personas, con las siguientes variables:
+
+Variable	Descripción
+id	Identificador único de cada participante.
+pais	País que representa cada participante (Argentina, Chile, Colombia, Ecuador, Perú, Uruguay).
+tipo	Tipo de cubo usado en la prueba (2x2x2, 3x3x3, Megaminx).
+tiempo	Tiempo, en segundos, que toma al participante en resolver el cubo de la prueba.]
+
+
+
+¿Existen diferencias en el tiempo de resolución de cubos Megaminx entre participantes de Uruguay, Perú y Colombia?
+```{r}
+library(dplyr)
+library(ez)
+
+datos = read.csv2("EP05 Datos.csv", stringsAsFactors = TRUE)
+
+uruguayos = filter(datos, pais == "Uruguay" & tipo == "Megaminx")
+peruanos = filter(datos, pais == "Perú" & tipo == "Megaminx")
+colombianos = filter(datos, pais == "Colombia" & tipo == "Megaminx")
+
+datos_filtrados = filter(datos, pais == "Uruguay" & tipo == "Megaminx" | pais == "Perú" & tipo == "Megaminx" | pais == "Colombia" & tipo == "Megaminx")
+
+```
+
+$H_0$ = No existe diferencia significativa de tiempo medio en la resolución de cubos megamix entre los peruanos/colombianos/uruguayos 
+$H_a$ = Existe diferencia significativa de tiempo medio en la resolución de cubos megamix en al menos uno de los países.
+
+Dado que son 3 grupos, de participantes independientes, se compara medias de una variable aleatoria en tres grupos independientes.
+Se propone Anova de muestras independientes
+
+Condicionoes;
+- Muestras independientes
+- normalidad en la muestra
+- Homocedasticidad
+
+```{r}
+shapiro.test(uruguayos$tiempo)
+shapiro.test(peruanos$tiempo)
+shapiro.test(colombianos$tiempo)
+```
+Dado que el p_value es mayor a 0.05 en todas, se procede con anova de una via;
+
+```{r}
+resultado = ezANOVA(data = datos_filtrados, dv = tiempo, wid = id, between = pais, detailed = TRUE, return_aov = TRUE)
+print(resultado)
+```
+
+El p_value de levene test es mayor a 0.05 (0.6553045), por lo que se cumple con la homocedasticidad segun nuestro nivel de significancia.
+
+Ahora, en ANOVA, p_value es menor a 0.05, siendo 2.515345e-13, por lo que se rechaza la hipotesis nula y se procede con el analisis post hoc (Tukey HSD).
+
+```{r}
+post_hocTukey = TukeyHSD(resultado$aov, "pais")
+post_hocTukey
+```
+
+Dado e analisis post_hoc con tukey, podemos decir que SI existen diferencias significativas en los tiempos de resolucion del cubo MEgamix entre los paies. La diferencia mas grande es entre Peru y Colombia (diff = -0.8080000) con el p_value es muy insignificante (0.0000000).
+
+
+
+
+
+Propongan una pregunta de investigación relacionada a los frameworks de desarrollo web frontend que necesite ser analizado por medio de un procedimiento ANOVA para muestras independientes con un factor que tenga entre 4 y 6 niveles. Luego invente una población para cada grupo con 5.000 datos, asegurando que cumpla las suposiciones de esta prueba.
+
+```{r}
+set.seed(21)
+n <- 5000
+
+datos <- data.frame(
+  Framework = rep(c("React", "Angular", "Vue.js", "Svelte", "SolidJS"), each = n),
+  Lineas_Codigo = c(
+    rnorm(n, mean = 12000, sd = 2500), # React
+    rnorm(n, mean = 18000, sd = 2500), # Angular (suele ser más robusto/pesado)
+    rnorm(n, mean = 11500, sd = 2500), # Vue.js
+    rnorm(n, mean = 8500,  sd = 2500), # Svelte (tiende a ser más conciso)
+    rnorm(n, mean = 8000,  sd = 2500)  # SolidJS
+  )
+)
+
+
+```
+Existe una diferencia significativa entre la cantidad de lineas de codigo y el framework que se usa?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
