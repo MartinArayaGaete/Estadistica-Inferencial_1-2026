@@ -18,9 +18,13 @@ library(dplyr)
 usuarios_musica = filter(datos, area == 'Música')
 ```
 
-Dado que es el mismo usuario quien hace la investigacion en diferentes dificultades, estamos ante una muestra pareada. 
+$H_0$ = No existe una diferencia significativa en los tiempos de resolución a los problemas según su dificultad ($\mu_{bajo} = \mu_{medio} = \mu_{alto}$)
+$H_a$ = Existe una diferencia significativa en al menos un tiempo de resolución de los problemas según su dificultad ($\mu_{bajo} \neq \mu_{medio} \neq \mu_{alto}$)
 
-$H_0$ = No existe una diferencia significativa en los tiempos de resolucion a los problemas segun su dificultad ($\mu_{bajo} = \mu_{medio} = \mu_{alto}$)
+Dado que es el mismo usuario quien hace la investigacion en diferentes dificultades, estamos ante una muestra pareada, por lo que se plantea el uso de Anova de muestras pareadas.
+
+Antes de continuar, se necesita verificar su
+- independencia entre las muestras
 
 
 
