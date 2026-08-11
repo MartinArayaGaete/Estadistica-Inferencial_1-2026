@@ -86,7 +86,7 @@ print(datos_todos)
 
 Ahora se verifica que se cumplan las condiciones para poder utilizar la prueba ANOVA para muestras independientes, las cuales son: 
 
-- La escala con que se mide la variable tiempo es numérica discreta, y está medida en segundos, considerando solo 2 decimáles, por lo que no hay problemas de escala entre cada medición.
+- La escala con que se mide la variable tiempo es numérica continua, y está medida en segundos, considerando solo 2 decimáles, por lo que no hay problemas de escala entre cada medición.
 
 - Las muestras fueron obtenidas de manera aleatoria e independiente desde las poblaciones de origen. Aunque existen distintas cantidades de datos por cada grupo, teniendo 41 para Chile, 40 para Colombia, y 37 para Uruguay, lo que sugiere no utilizar aov(), sino que ezANOVA() en su lugar.
 

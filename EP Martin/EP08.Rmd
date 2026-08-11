@@ -1,0 +1,616 @@
+---
+title: "EP08-respuesta-equipo-4.Rmd"
+output: html_document
+date: "2026-07-14"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(dplyr)
+library(boot)
+library(ggplot2)
+
+```
+# Pregunta 1:
+LECTURA DATASET
+```{r}
+
+# Cargar datos
+casen <- read.csv("EP08 Datos CASEN 2017.csv", stringsAsFactors = FALSE)
+
+# Limpieza básica de formatos
+casen <- casen %>%
+  mutate(
+    region = as.character(region),
+    sexo = as.character(sexo),
+    edad = as.numeric(edad),
+    ecivil = as.character(ecivil),
+    educ = as.character(educ),
+    ytotcorh = as.numeric(ytotcorh)
+  )
+```
+
+*Pregunta de investigación:* Considerando una muestra aleatoria de hogares de la Región de Tarapacá, ¿existe una diferencia significativa en la proporción de mujeres adultas (mayores de 18 años) que han alcanzado educación superior entre aquellas que están casadas (o conviviendo) y aquellas que no tienen pareja?
+
+*Nota sobre la unidad de análisis:* El enunciado de la actividad nos pide muestrear hogares (entre 100 y 150). Como es normal que en una casa viva más de una mujer adulta, nosotros primero sorteamos 130 hogares y luego extraemos todas las mujeres adultas que cumplen con los criterios dentro de esas viviendas.
+Esto significa que nuestro "n" final de personas será mayor a 130 y que, en estricto rigor, algunas observaciones podrían no ser 100% independientes entre sí (por ejemplo, si encuestamos a una madre y a su hija que viven juntas). Dejamos esto documentado como una limitación práctica de nuestro diseño de muestreo, ya que si quisiéramos independencia total, tendríamos que haber filtrado únicamente a las "jefas de hogar".
+
+*Argumento en simple del experimento:* Esta pregunta compara la frecuencia de una característica categórica (haber alcanzado educación superior) entre dos grupos independientes de mujeres adultas (con pareja y sin pareja), cumpliendo con lo solicitado para esta actividad.
+
+#### Hipótesis a contrastar   
+##### $H_0$: La proporción de mujeres con educación superior es igual en ambos grupos (la diferencia de proporciones es 0).   
+##### $H_A$: La proporción de mujeres con educación superior es diferente entre ambos grupos (la diferencia de proporciones es distinta de 0).
+
+#### Preparación de la Muestra
+Filtramos a las mujeres adultas de Tarapacá y recodificamos el estado civil y el nivel educacional. Luego, extraemos una muestra aleatoria de hogares (130 viviendas).
+
+```{r}
+datos_p1_poblacion <- casen %>%
+  filter(grepl("Tarapacá|Tarapaca", region, ignore.case = TRUE)) %>%
+  filter(sexo == "Mujer" & edad >= 18) %>%
+  filter(!is.na(ecivil) & !is.na(educ)) %>%
+  mutate(
+    estado_civil_agrup = case_when(
+      grepl("Casado|Conviviente", ecivil, ignore.case = TRUE) ~ "Con_Pareja",
+      grepl("Soltero|Separado|Divorciado|Viudo|Anulado", ecivil, ignore.case = TRUE) ~ "Sin_Pareja",
+      TRUE ~ "Otro"
+    ),
+    # Creamos una variable binaria para contar los éxitos más fácil
+    educ_superior = ifelse(grepl("Técnica|Profesional|Postgrado", educ, ignore.case = TRUE), 1, 0)
+  ) %>%
+  filter(estado_civil_agrup != "Otro")
+
+# Muestreo aleatorio de HOGARES (100 < n < 150)
+set.seed(42)
+ids_muestra_p1 <- sample(unique(datos_p1_poblacion$id.vivienda), 130)
+
+# Filtramos a las personas de los hogares sorteados y elegimos SOLO UNA al azar por hogar
+datos_p1 <- datos_p1_poblacion %>% 
+  filter(id.vivienda %in% ids_muestra_p1) %>%
+  group_by(id.vivienda) %>%
+  slice_sample(n = 1) %>% 
+  ungroup()
+
+
+# Le ponemos un factor con etiquetas para que los gráficos salgan bonitos
+datos_p1$educ_superior_factor <- factor(datos_p1$educ_superior,
+                                         labels = c("Sin Ed. Superior", "Con Ed. Superior"))
+
+cat("Número de hogares sorteados:", length(ids_muestra_p1), "\n")
+cat("Número de mujeres adultas analizadas:", nrow(datos_p1), "\n")
+```
+
+#### Análisis descriptivo
+
+```{r}
+tabla_frecuencias <- table(datos_p1$estado_civil_agrup, datos_p1$educ_superior_factor)
+cat("--- Frecuencias absolutas ---\n")
+print(tabla_frecuencias)
+
+ggplot(datos_p1, aes(x = estado_civil_agrup, fill = educ_superior_factor)) +
+  geom_bar(position = "fill", color = "black", alpha = 0.8) +
+  scale_fill_manual(values = c("lightblue", "steelblue")) +
+  labs(title = "Proporción de educación superior según estado civil",
+       x = "Estado civil", y = "Proporción", fill = "Nivel educativo") +
+  theme_minimal()
+
+# Calculamos las proporciones a mano para ver la diferencia
+prop_obs <- tapply(datos_p1$educ_superior, datos_p1$estado_civil_agrup, mean)
+dif_obs <- prop_obs["Con_Pareja"] - prop_obs["Sin_Pareja"]
+cat("\nProporción Con Pareja:", prop_obs["Con_Pareja"], "\n")
+cat("Proporción Sin Pareja:", prop_obs["Sin_Pareja"], "\n")
+cat("Diferencia observada:", dif_obs, "\n")
+
+```
+
+A partir de la muestra obtenida de hogares de la Región de Tarapacá, se analizó a un total de 130 mujeres adultas. Al observar las proporciones muestrales, se identifica que el 19.23% de las mujeres que se encuentran en pareja (casadas o conviviendo) han alcanzado la educación superior. En contraste, un 20.51% de las mujeres sin pareja (solteras, separadas, viudas, etc.) cuenta con este nivel educativo. Esto genera una diferencia observada de aproximadamente -1.28 puntos porcentuales entre ambos grupos. A nivel descriptivo y visual (gráfico de proporciones), la diferencia parece ser marginal, lo que sugiere la necesidad de validarlo inferencialmente.
+
+Verificación de condiciones para prueba paramétrica
+Antes de lanzar el remuestreo, queremos ver si podíamos usar una prueba clásica (como chi-cuadrado). Para eso, la condición de Cochran nos pide que las frecuencias esperadas en la tablita sean de al menos 5.
+
+```{r }
+
+esperados <- chisq.test(tabla_frecuencias, correct = FALSE)$expected
+cat("--- Frecuencias esperadas bajo H0 ---\n")
+print(esperados)
+cat("\n¿Todas las frecuencias esperadas son >= 5?:", all(esperados >= 5), "\n")
+```
+Como vimos en la advertencia de arriba (las observaciones no son totalmente independientes al venir de las mismas casas) y considerando cómo se distribuyen los datos en la tabla, sentimos que no es válido aplicar una prueba asintótica paramétrica. Esto nos da el pase  para irnos por los métodos de remuestreo.
+
+#### Prueba de permutaciones Monte Carlo (para sacar el p-valor)
+Esta prueba simula qué pasaría si no hubiera ninguna relación entre el estado civil y la educación. Mezclamos las etiquetas casi diez mil veces para armar un mundo donde el azar manda.
+
+```{r}
+B <- 9999
+dist_permutaciones <- numeric(B)
+n_con_pareja <- sum(datos_p1$estado_civil_agrup == "Con_Pareja")
+total_datos <- nrow(datos_p1)
+
+set.seed(123)  # Fijamos semilla para que el profesor pueda replicar esto exacto
+for (i in 1:B) {
+  educ_mezclada <- sample(datos_p1$educ_superior)
+  p_falsa_con <- mean(educ_mezclada[1:n_con_pareja])
+  p_falsa_sin <- mean(educ_mezclada[(n_con_pareja + 1):total_datos])
+  dist_permutaciones[i] <- p_falsa_con - p_falsa_sin
+}
+
+# Calculamos el p-valor de dos colas
+p_valor_p1 <- (sum(abs(dist_permutaciones) >= abs(dif_obs)) + 1) / (B + 1)
+cat("Diferencia observada en la muestra real:", dif_obs, "\n")
+cat("P-valor (permutaciones):", p_valor_p1, "\n")
+```
+
+#### Intervalo de confianza para la diferencia de proporciones (Bootstrap)
+La prueba de arriba mezcla etiquetas, así que está centrada en 0. Pero si queremos saber dónde cae el intervalo de confianza real de nuestra diferencia, tenemos que usar bootstrap: sacar remuestras con reemplazo pero respetando quién es quién.
+
+```{r}
+B_boot <- 9999
+dif_boot <- numeric(B_boot)
+
+set.seed(456)  # Otra semilla para no mezclar procesos
+for (i in 1:B_boot) {
+  # Sacamos una muestra con reemplazo del mismo tamaño
+  muestra_boot <- datos_p1[sample(nrow(datos_p1), replace = TRUE), ]
+  p_boot <- tapply(muestra_boot$educ_superior, muestra_boot$estado_civil_agrup, mean)
+  dif_boot[i] <- p_boot["Con_Pareja"] - p_boot["Sin_Pareja"]
+}
+
+# Sacamos los cuantiles para armar el intervalo del 95%
+ic_boot <- quantile(dif_boot, c(0.025, 0.975), na.rm = TRUE)
+cat("Diferencia observada:", dif_obs, "\n")
+cat("Intervalo de confianza 95% (bootstrap): [", ic_boot[1], ",", ic_boot[2], "]\n")
+
+# Visualizamos la distribución de las remuestras
+ggplot(data.frame(dif_boot = dif_boot), aes(x = dif_boot)) +
+  geom_histogram(bins = 40, fill = "steelblue", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = dif_obs, color = "red", linetype = "dashed", linewidth = 1) +
+  geom_vline(xintercept = ic_boot, color = "darkred", linetype = "dotted") +
+  labs(title = "Distribución bootstrap de la diferencia de proporciones",
+       subtitle = "Línea roja: diferencia observada | Líneas punteadas: IC 95%",
+       x = "Diferencia de proporciones (Con pareja - Sin pareja)", y = "Frecuencia") +
+  theme_minimal()
+
+```
+
+
+#### Análisis de resultados y conclusión
+
+Con un 95% de confianza, no hay evidencia de que la proporción de mujeres adultas con educación superior difiera entre quienes tienen pareja (19.23%) y quienes no (20.51%) en la Región de Tarapacá. La diferencia observada (-0.01282 ) es pequeña y compatible con el azar del muestreo: el p-valor de la prueba de permutaciones (0.8346) es muy superior a 0.05, y el intervalo de confianza bootstrap ([ -0.15 , 0.1306842 ]) incluye el cero. No se rechaza $H_0$
+
+---
+
+```{r, include=FALSE}
+
+
+archivo <- list.files(
+  pattern = "^EP08 Datos CASEN 2017.*\\.csv$",
+  full.names = TRUE
+)[1]
+
+if (is.na(archivo)) {
+  stop(
+    "No se encontró el CSV. El archivo Rmd y ",
+    "'EP08 Datos CASEN 2017.csv' deben estar en la misma carpeta."
+  )
+}
+
+casen <- read.csv(
+  archivo,
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+```
+
+# # Pregunta 2:
+
+¿Existen diferencias en el ingreso total corregido promedio del hogar entre personas con nivel educacional básico o inferior, medio y superior?
+
+La variable numérica estudiada es `ytotcorh`, correspondiente al ingreso total corregido del hogar. La variable de agrupación se construye a partir de `educ` y tiene tres niveles independientes:
+
+- **Básico o inferior:** sin educación formal, educación básica incompleta o completa.
+- **Medio:** educación media humanista o técnico-profesional, incompleta o completa.
+- **Superior:** educación técnica de nivel superior, profesional o de postgrado, incompleta o completa.
+
+Como el ingreso es una característica del hogar y el archivo contiene varias personas de una misma vivienda, se selecciona una sola persona adulta por `id.vivienda`. De esta manera, cada vivienda aporta una única observación y no se repite varias veces el mismo ingreso.
+
+# Hipótesis
+
+Sean \(\mu_B\), \(\mu_M\) y \(\mu_S\) los ingresos totales corregidos promedio de los hogares asociados a los niveles básico o inferior, medio y superior, respectivamente.
+
+\[
+H_0:\mu_B=\mu_M=\mu_S
+\]
+
+\[
+H_A:\text{al menos una de las tres medias es diferente}
+\]
+
+Se utilizará como estadístico de interés el estadístico \(F\) de una ANOVA de una vía para muestras independientes. Este estadístico compara la variabilidad entre los grupos con la variabilidad dentro de ellos. Como la actividad solicita un método de remuestreo, su distribución bajo \(H_0\) se estimará mediante bootstrap.
+
+# Selección y preparación de los datos
+
+Se selecciona una muestra aleatoria reproducible de 250 viviendas, cumpliendo la condición 200<n<300. Luego se elige aleatoriamente una persona adulta por vivienda.
+```{r preparacion}
+datos_base <- casen %>%
+  mutate(
+    nivel = case_when(
+      educ %in% c(
+        "Sin Educ. Formal",
+        "Básica Incom.",
+        "Básica Compl."
+      ) ~ "Básico o inferior",
+
+      educ %in% c(
+        "M. Hum. Incompleta",
+        "M. Hum. Completa",
+        "M. Téc. Prof. Incompleta",
+        "M. Téc Completa"
+      ) ~ "Medio",
+
+      educ %in% c(
+        "Técnico Nivel Superior Incompleta",
+        "Técnico Nivel Superior Completo",
+        "Profesional Incompleto",
+        "Profesional Completo",
+        "Postgrado Incompleto",
+        "Postgrado Completo"
+      ) ~ "Superior",
+
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(
+    edad >= 18,
+    !is.na(nivel),
+    !is.na(ytotcorh),
+    is.finite(ytotcorh)
+  )
+
+set.seed(20260712)
+
+viviendas_seleccionadas <- sample(
+  unique(datos_base$id.vivienda),
+  size = 250,
+  replace = FALSE
+)
+
+set.seed(20260713)
+
+muestra <- datos_base %>%
+  filter(id.vivienda %in% viviendas_seleccionadas) %>%
+  group_by(id.vivienda) %>%
+  slice_sample(n = 1) %>%
+  ungroup() %>%
+  mutate(
+    nivel = factor(
+      nivel,
+      levels = c(
+        "Básico o inferior",
+        "Medio",
+        "Superior"
+      )
+    )
+  )
+
+stopifnot(nrow(muestra) == 250)
+stopifnot(n_distinct(muestra$id.vivienda) == 250)
+stopifnot(all(table(muestra$nivel) > 1))
+
+cat("Número de viviendas analizadas:", nrow(muestra), "\n")
+```
+
+# Descripción de la muestra
+
+```{r resumen}
+resumen <- muestra %>%
+  group_by(nivel) %>%
+  summarise(
+    n = n(),
+    media = mean(ytotcorh),
+    mediana = median(ytotcorh),
+    desviacion_estandar = sd(ytotcorh),
+    varianza = var(ytotcorh),
+    .groups = "drop"
+  )
+
+resumen_mostrar <- resumen %>%
+  mutate(
+    across(
+      c(media, mediana, desviacion_estandar, varianza),
+      ~ format(
+        round(.x, 2),
+        big.mark = ".",
+        decimal.mark = ",",
+        scientific = FALSE
+      )
+    )
+  )
+
+knitr::kable(
+  resumen_mostrar,
+  col.names = c(
+    "Nivel educacional",
+    "n",
+    "Media",
+    "Mediana",
+    "Desviación estándar",
+    "Varianza"
+  ),
+  caption = "Resumen del ingreso total corregido del hogar"
+)
+```
+
+La tabla permite comparar el tamaño de los grupos, sus ingresos promedio y sus dispersiones. La mediana también se incluye porque puede ayudar a reconocer asimetría o la influencia de ingresos muy altos sobre la media.
+
+# Revisión de las condiciones
+
+Según el material de clases, una ANOVA de una vía para muestras independientes requiere una variable numérica, muestras aleatorias e independientes, normalidad aproximada y homogeneidad de varianzas.
+
+La independencia se aborda seleccionando una única vivienda por observación. La normalidad se revisa mediante gráficos Q-Q y la homogeneidad se evalúa comparando la mayor y la menor varianza muestral. El criterio indicado en las lecturas considera razonable una razón no superior a 1,5.
+
+```{r qqplot, fig.height=4.5, fig.width=8}
+ggplot(
+  muestra,
+  aes(sample = ytotcorh)
+) +
+  stat_qq() +
+  stat_qq_line() +
+  facet_wrap(~ nivel, scales = "free") +
+  labs(
+    title = "Gráficos Q-Q del ingreso por nivel educacional",
+    x = "Cuantiles teóricos",
+    y = "Cuantiles observados"
+  ) +
+  theme_minimal()
+```
+
+```{r boxplot, fig.height=4.5, fig.width=8}
+ggplot(
+  muestra,
+  aes(x = nivel, y = ytotcorh)
+) +
+  geom_boxplot() +
+  labs(
+    title = "Ingreso total corregido por nivel educacional",
+    x = "Nivel educacional",
+    y = "Ingreso total corregido del hogar"
+  ) +
+  theme_minimal()
+```
+
+```{r varianzas, results='asis'}
+razon_varianzas <- max(resumen$varianza) /
+  min(resumen$varianza)
+
+cat(
+  "La razón entre la mayor y la menor varianza muestral es **",
+  round(razon_varianzas, 2),
+  "**. ",
+  sep = ""
+)
+
+if (razon_varianzas <= 1.5) {
+  cat(
+    "De acuerdo con el criterio presentado en las lecturas, ",
+    "la condición de homogeneidad de varianzas puede considerarse razonable."
+  )
+} else {
+  cat(
+    "Este valor supera 1,5, por lo que la condición de homogeneidad ",
+    "de varianzas no se cumple adecuadamente."
+  )
+}
+```
+
+Los gráficos deben interpretarse junto con este resultado. Si los puntos se apartan notoriamente de la recta teórica, se observa asimetría o aparecen valores extremos, no resulta conveniente depender exclusivamente de la distribución \(F\) teórica. Por esta razón se aplica el procedimiento bootstrap solicitado.
+
+# Prueba ómnibus mediante bootstrap
+
+Bajo \(H_0\), los tres grupos deben tener la misma media. Para representar esta situación, se centra cada grupo en la media total y luego se remuestrea con reemplazo dentro de cada grupo, conservando sus tamaños originales.
+
+Se realizan 9.999 remuestras. En cada una se calcula el estadístico \(F\). El valor p corresponde a la proporción de estadísticos bootstrap iguales o mayores que el observado.
+
+```{r bootstrap}
+estadistico_F <- function(y, grupo) {
+  summary(aov(y ~ grupo))[[1]][1, "F value"]
+}
+
+pares <- combn(levels(muestra$nivel), 2)
+
+diferencias_medias <- function(y, grupo) {
+  apply(
+    pares,
+    2,
+    function(par) {
+      mean(y[grupo == par[1]]) -
+        mean(y[grupo == par[2]])
+    }
+  )
+}
+
+y <- muestra$ytotcorh
+grupo <- muestra$nivel
+
+F_observado <- estadistico_F(y, grupo)
+diferencias_observadas <- diferencias_medias(y, grupo)
+
+media_total <- mean(y)
+
+datos_bajo_H0 <- lapply(
+  levels(grupo),
+  function(nivel) {
+    x <- y[grupo == nivel]
+    x - mean(x) + media_total
+  }
+)
+
+names(datos_bajo_H0) <- levels(grupo)
+tamanos <- table(grupo)
+
+B <- 9999
+F_boot <- numeric(B)
+
+# Aquí se guardan también las diferencias entre pares,
+# de modo que el post-hoc use las mismas remuestras.
+diferencias_boot <- matrix(
+  NA_real_,
+  nrow = B,
+  ncol = ncol(pares)
+)
+
+set.seed(20260714)
+
+for (b in seq_len(B)) {
+  remuestras <- lapply(
+    levels(grupo),
+    function(nivel) {
+      sample(
+        datos_bajo_H0[[nivel]],
+        size = tamanos[[nivel]],
+        replace = TRUE
+      )
+    }
+  )
+
+  y_boot <- unlist(remuestras, use.names = FALSE)
+
+  grupo_boot <- factor(
+    rep(
+      levels(grupo),
+      times = as.integer(tamanos)
+    ),
+    levels = levels(grupo)
+  )
+
+  F_boot[b] <- estadistico_F(y_boot, grupo_boot)
+
+  diferencias_boot[b, ] <- diferencias_medias(
+    y_boot,
+    grupo_boot
+  )
+}
+
+p_global <- (
+  sum(F_boot >= F_observado) + 1
+) / (B + 1)
+
+resultado_global <- data.frame(
+  Estadístico_F = F_observado,
+  `p-valor bootstrap` = p_global,
+  check.names = FALSE
+)
+
+knitr::kable(
+  resultado_global,
+  digits = 4,
+  caption = "Resultado de la prueba ómnibus"
+)
+```
+
+```{r grafico-bootstrap, fig.height=4.5, fig.width=7}
+ggplot(
+  data.frame(F_boot = F_boot),
+  aes(x = F_boot)
+) +
+  geom_histogram(bins = 40, color = "white") +
+  geom_vline(
+    xintercept = F_observado,
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  labs(
+    title = "Distribución bootstrap del estadístico F bajo H0",
+    subtitle = "La línea discontinua representa el estadístico observado",
+    x = "Estadístico F",
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
+```
+
+# Análisis post-hoc
+
+La prueba ómnibus permite determinar si existe alguna diferencia global, pero no identifica entre qué niveles ocurre. Por indicación del enunciado, se realiza el análisis post-hoc aunque la prueba global no resulte significativa.
+
+Se comparan los tres pares de niveles usando las diferencias de medias obtenidas en las mismas remuestras bootstrap. Luego se aplica el ajuste de Holm, presentado en las lecturas, para controlar el aumento de errores de tipo I producido por las comparaciones múltiples.
+
+```{r posthoc}
+p_sin_ajustar <- sapply(
+  seq_len(ncol(pares)),
+  function(j) {
+    (
+      sum(
+        abs(diferencias_boot[, j]) >=
+          abs(diferencias_observadas[j])
+      ) + 1
+    ) / (B + 1)
+  }
+)
+
+p_ajustados <- p.adjust(
+  p_sin_ajustar,
+  method = "holm"
+)
+
+resultados_posthoc <- data.frame(
+  Grupo_1 = pares[1, ],
+  Grupo_2 = pares[2, ],
+  Diferencia_de_medias = diferencias_observadas,
+  p_sin_ajustar = p_sin_ajustar,
+  p_ajustado_Holm = p_ajustados,
+  check.names = FALSE
+)
+
+resultados_posthoc_mostrar <- resultados_posthoc %>%
+  mutate(
+    Diferencia_de_medias = format(
+      round(Diferencia_de_medias, 2),
+      big.mark = ".",
+      decimal.mark = ",",
+      scientific = FALSE
+    ),
+    p_sin_ajustar = format.pval(
+      p_sin_ajustar,
+      digits = 4,
+      eps = 0.0001
+    ),
+    p_ajustado_Holm = format.pval(
+      p_ajustado_Holm,
+      digits = 4,
+      eps = 0.0001
+    )
+  )
+
+knitr::kable(
+  resultados_posthoc_mostrar,
+  col.names = c(
+    "Grupo 1",
+    "Grupo 2",
+    "Diferencia de medias (G1 - G2)",
+    "p sin ajustar",
+    "p ajustado por Holm"
+  ),
+  caption = "Comparaciones post-hoc"
+)
+```
+
+# Conclusión
+
+Con un nivel de significación del 5%, se rechaza la hipótesis nula de igualdad de medias. La muestra entrega evidencia de que al menos uno de los tres niveles educacionales presenta un ingreso total corregido promedio diferente (F = 21.732; p-valor bootstrap = 0.0014).
+
+Las medias observadas en la muestra fueron:
+
+Básico o inferior: $650.650.
+Medio: $980.464.
+Superior: $2.175.023.
+En el análisis post-hoc:
+
+El grupo Medio presenta un ingreso promedio significativamente mayor que Básico o inferior (p ajustado = 0.004).
+El grupo Superior presenta un ingreso promedio significativamente mayor que Básico o inferior (p ajustado = 3e-04).
+El grupo Superior presenta un ingreso promedio significativamente mayor que Medio (p ajustado = 0.0012).
+Estos resultados muestran una asociación entre el nivel educacional de la persona adulta seleccionada y el ingreso del hogar. No permiten afirmar una relación causal, ya que los datos son observacionales y no se controlan otras características de las personas o de las viviendas.

@@ -618,8 +618,7 @@ const TREE = {
     hint:null,
     opts:[
       {label:"1 grupo", next:"cat1Type", crumb:"1 grupo"},
-      {label:"2 grupos", next:"catIndep2", crumb:"2 grupos"},
-      {label:"3 o más grupos", next:"catIndep3", crumb:"3+ grupos"}
+      {label:"2 o más grupos (tablas r × c)", next:"catIndep2", crumb:"2+ grupos"}
     ]
   },
   cat1Type:{
@@ -636,35 +635,27 @@ const TREE = {
     q:"¿Las muestras son independientes o pareadas?",
     hint:"Pareadas: mismo sujeto evaluado dos veces. Independientes: grupos distintos.",
     opts:[
-      {label:"Independientes", next:"catSize2", crumb:"Independientes"},
-      {label:"Pareadas — mismo sujeto, dos mediciones", next:"res_mcnemar", crumb:"Pareadas"}
+      {label:"Independientes (comparar distribuciones o proporciones)", next:"catSize2", crumb:"Independientes"},
+      {label:"Pareadas (2 condiciones) — mismo sujeto, dos mediciones", next:"res_mcnemar", crumb:"Pareadas (2)"},
+      {label:"Pareadas (3+ condiciones) — mismo sujeto en 3+ estados", next:"res_cochran", crumb:"Pareadas (3+)"}
     ]
   },
   catSize2:{
-    badge:"Verificar frecuencias esperadas",
-    q:"¿Las frecuencias esperadas en todas las celdas son ≥ 5?",
-    hint:"Si alguna celda tiene frecuencia esperada < 5, chi-cuadrado/test Z no son confiables.",
+    badge:"Verificar regla de Cochran (Aduana de Frecuencias Esperadas)",
+    q:"¿Se cumplen las condiciones asintóticas para Chi-cuadrado?",
+    hint:"Aduana de Cochran:\n1. Ninguna celda en la matriz de esperados E_ij debe ser < 1.\n2. Al menos el 80% de las celdas deben tener E_ij ≥ 5.\n(Para tablas 2x2, el 100% debe tener E_ij ≥ 5).",
     opts:[
-      {label:"Sí — todas las celdas con frec. esperada ≥ 5", next:"catHypothesis2", crumb:"Frec. suficiente"},
-      {label:"No — hay celdas con frec. esperada < 5", next:"res_fisher", crumb:"Muestra pequeña"}
+      {label:"Sí — se cumple la regla de Cochran (esperados suficientes)", next:"catHypothesis2", crumb:"Cochran Cumplido ✓"},
+      {label:"No — colapsa Chi-cuadrado (hay celdas con E_ij < 5)", next:"res_fisher", crumb:"Violación Asintótica ✗"}
     ]
   },
   catHypothesis2:{
-    badge:"Direccionalidad",
-    q:"¿La hipótesis alternativa (H_A) es unilateral (direccional) o bilateral?",
-    hint:"Unilateral: evaluar si un grupo es mayor que el otro (p1 > p2 o p1 < p2).\nBilateral: evaluar si existe alguna diferencia en general (p1 ≠ p2).",
+    badge:"Dimensiones y Direccionalidad",
+    q:"¿Cuál es la geometría de la tabla y la naturaleza de la hipótesis?",
+    hint:"Tablas 2x2 permiten pruebas Z unilaterales (prop.test). Tablas r x c evalúan asociación ómnibus.",
     opts:[
-      {label:"Bilateral (no direccional) — probar si hay diferencia o asociación", next:"res_chisq2", crumb:"Bilateral"},
-      {label:"Unilateral (direccional) — probar si un grupo es específicamente mayor/menor", next:"res_z_prop", crumb:"Unilateral"}
-    ]
-  },
-  catIndep3:{
-    badge:"Diseño muestral",
-    q:"¿Las muestras son independientes o pareadas?",
-    hint:null,
-    opts:[
-      {label:"Independientes", next:"res_chisqk", crumb:"Independientes"},
-      {label:"Pareadas — mismo sujeto en 3+ condiciones", next:"res_cochran", crumb:"Pareadas"}
+      {label:"Tabla 2×2 con H_A Bilateral (o Tabla r × c general)", next:"res_chisq2", crumb:"Chi-cuadrado Pearson"},
+      {label:"Tabla 2×2 con H_A Unilateral (p1 > p2 o p1 < p2)", next:"res_z_prop", crumb:"Test Z (prop.test)"}
     ]
   },
 
@@ -876,15 +867,15 @@ const TREE = {
   ════════════════════════════════ */
   res_chisq2:{
     result:true, cls:"c",
-    tag:"Proporciones · 2 grupos independientes",
-    name:"Chi-cuadrado de Pearson\n(tabla 2×2)",
-    rfunc:"chisq.test(tabla_contingencia)",
+    tag:"Prueba Exacta / Asintótica · Categóricos Independientes",
+    name:"Chi-cuadrado de Pearson\n(Tabla r × c)",
+    rfunc:"# Chi-cuadrado asintótico tradicional\nchisq.test(tabla_contingencia)",
     conds:[
-      "Variables categóricas",
-      "Observaciones independientes",
-      "Frecuencias esperadas ≥ 5 en todas las celdas"
+      "Variables categóricas nominales u ordinales",
+      "Muestras/observaciones independientes",
+      "Regla de Cochran CUMPLIDA: Ninguna celda esperada < 1 y al menos el 80% de las celdas con E_ij ≥ 5"
     ],
-    note:"Para una tabla de 2×2, el test de Chi-cuadrado y el test Z de dos proporciones (prop.test) son matemáticamente equivalentes (el estadístico X² es el cuadrado de Z). Sin embargo, si tu hipótesis de investigación es unilateral (p1 > p2 o p1 < p2), debes usar el Test Z de proporciones (prop.test) con su parámetro alternative para habilitar la direccionalidad de forma nativa."
+    note:"Si p < 0.05, aplicar pruebas post-hoc de Chi-cuadrado por pares o análisis de residuos estandarizados ajustados con corrección de Bonferroni o Benjamini-Hochberg."
   },
   res_z_prop:{
     result:true, cls:"c",
@@ -900,15 +891,16 @@ const TREE = {
   },
   res_fisher:{
     result:true, cls:"c",
-    tag:"Proporciones · 2 grupos · muestra pequeña",
-    name:"Prueba exacta de Fisher",
-    rfunc:'fisher.test(tabla_contingencia, alternative = "two.sided")',
+    tag:"Prueba Exacta Permutacional · Tablas r × c",
+    name:"Test Exacto de Fisher\n(Generalizado Freeman-Halton / Network Algorithm)",
+    rfunc:"# Método Exacto (Algoritmo de Red Mehta-Patel):\nfisher.test(tabla_contingencia)\n\n# Si colapsa el espacio de memoria (workspace):\nfisher.test(tabla_contingencia, simulate.p.value = TRUE, B = 100000)",
     conds:[
-      "Variables categóricas (idealmente dicotómicas)",
-      "Frecuencias esperadas < 5 en alguna celda",
-      "Entrega valor p exacto, no una aproximación"
+      "Variables categóricas en tablas 2x2 o tablas r x c (ej. 2x5)",
+      "Muestras independientes",
+      "Frecuencias esperadas INSUFICIENTES (Violación de regla de Cochran, E_ij < 5 en > 20% de celdas)",
+      "Calcula masa de probabilidad hipergeométrica multivariada exacta sobre márgenes fijos"
     ],
-    note:"Puede usarse también en tablas más grandes que 2×2, pero el tiempo de cómputo crece con la muestra."
+    note:"Es un mito que Fisher aplica solo a 2×2. En R, fisher.test() implementa el algoritmo de red de Mehta-Patel (1983) para resolver la probabilidad hipergeométrica multivariada exacta en tablas r × c. Si la matriz genera explosión combinatoria, parametrizar con simulación de Monte Carlo (simulate.p.value = TRUE)."
   },
   res_mcnemar:{
     result:true, cls:"c",
@@ -920,18 +912,6 @@ const TREE = {
       "Mismo sujeto medido dos veces (diseño pareado)"
     ],
     note:null
-  },
-  res_chisqk:{
-    result:true, cls:"c",
-    tag:"Proporciones · 3+ grupos independientes",
-    name:"Chi-cuadrado de Pearson\n(tabla k×m)",
-    rfunc:"chisq.test(tabla_contingencia)",
-    conds:[
-      "Variables categóricas",
-      "Grupos independientes",
-      "Frecuencias esperadas ≥ 5 en todas las celdas"
-    ],
-    note:"Si p < 0.05, aplica chi-cuadrado por pares con corrección de Bonferroni u Holm como post-hoc."
   },
   res_cochran:{
     result:true, cls:"c",

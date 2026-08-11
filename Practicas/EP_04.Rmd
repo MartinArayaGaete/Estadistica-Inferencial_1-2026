@@ -1,0 +1,53 @@
+---
+title: "EP04"
+author: "Martin Araya, Benjamin Letelier"
+date: "2026-07-12"
+output: html_document
+---
+
+Una agencia de marketing desea determinar si hay una diferencia significativa en la efectividad de tres estrategias publicitarias utilizadas para promocionar un nuevo producto. Para ello, se ha recopilado información de personas que fueron expuestas a las tres estrategias publicitarias, registrando si mostraron una aceptación (A) o rechazo (R) a cada una de ellas.
+¿Qué puede concluir la agencia de marketing sobre la efectividad de las estrategias publicitarias para promover el nuevo producto?
+Indicación: obtenga la muestra de 50 personas a partir del archivo “EP04 Datos.csv” que se encuentra en el directorio compartido, usando la semilla 112.
+```{r}
+datos = read.csv2("EP04 Datos.csv", stringsAsFactors = TRUE)
+
+set.seed(21)
+muestra = slice_sample(datos, n = 50)
+
+muestra$estrategia_1 = ifelse(muestra$estrategia_1 == "A", 1, 0)
+muestra$estrategia_2 = ifelse(muestra$estrategia_2 == "A", 1, 0)
+muestra$estrategia_3 = ifelse(muestra$estrategia_3 == "A", 1, 0)
+```
+
+$H_0$: La proporción de "Aceptación" es igual para las 3 estrategias publicitarias.
+$H_A$: La proporción de "Aceptación" es distinta para al menos un par de las estrategias publicitarias.
+
+Se utilizara la prueba Q de Cochran, dado que la variable es dicotómica y se midió en los mismos individuos para 3 estrategias. La preuba mnos permiten evaluar si las proporciones de aceptación son las mismas en las 3 estrategias
+
+```{r}
+library(RVAideMemoire)
+library(tidyverse)
+
+# cochran.qtest(formato: formula(respuesta ~ tratamientos | bloques),matrizDatos,alpha).
+muestra_larga = pivot_longer(muestra, cols = c(estrategia_1, estrategia_2, estrategia_3), names_to = "estrategia", values_to = "respuesta")
+
+cochran.qtest(respuesta ~ estrategia | id, muestra_larga)
+```
+
+Dado p-value = 0.07615, no se rechaza la hipotesis nula de igualdad de proporciones. A ver, ahora ya puedes responder la conclusión del ejercicio. Como no fue significativo, no corresponde hacer post hoc. En formal: dado que p = 0,075 es mayor que0,05, no se rechaza H0. Por lo tanto, no hay evidencia estadísticamente suficiente para afirmar que las proporciones de aceptación difieren entre las tres estrategias.
+
+
+
+
+
+Una organización de conservación de la fauna silvestre estudia manadas de tres tipos de animales herbívoros en reservas naturales africanas. Se seleccionó aleatoriamente una muestra de 30 observaciones de los animales que se acercaron a beber agua en el principal afluente de las reservas Etosha y Mahago durante tres días consecutivos del mes de febrero. Se registraron 4 elefantes, 21 antílopes y 5 cebras en la primera, y 14 elefantes, 7 antílopes y 9 cebras en la segunda.
+¿Existe evidencia de que la proporción de especies es la misma en ambas reservas?
+Una organización dedicada a la rehabilitación de villanos ha observado que muchos de ellos ingresan al programa con niveles elevados de hostilidad. Para abordar este problema, decidieron implementar un nuevo programa de bienvenida diseñado para reducir la hostilidad y facilitar la reintegración a la sociedad. Para evaluar la efectividad de este programa, se reclutó a un grupo de 20 villanos a quienes se les midió el nivel de hostilidad (alto o bajo) antes y después de participar en el programa de bienvenida. Los resultados se presentan a continuación:
+2 villanos no mostraron hostilidad ni antes ni después.
+15 villanos que inicialmente mostraban hostilidad dejaron de hacerlo.
+2 villanos mantuvieron un elevado nivel de hostilidad.
+el otro villano desarrolló síntomas de hostilidad tras participar en el programa cuando antes no era hostil.
+¿Qué se puede concluir acerca de la efectividad del nuevo programa de bienvenida para reducir la hostilidad en los villanos?
+Durante un apocalipsis zombie, un grupo de 10 mujeres y 14 hombres sobrevivientes se encuentra buscando desesperadamente refugio y encuentran dos edificios abandonados que podrían servir: una escuela y un centro comercial. Algunas personas piensan que la escuela es más segura, mientras que otras consideran que el centro comercial es más seguro. Después de elegir sus opciones, se observa que 6 mujeres y 10 hombres eligen refugiarse en la escuela abandonada mientras que los otros optan por el centro comercial.
+¿Hay relación entre el sexo de la persona y el edificio abandonado que encuentra más seguro?
+

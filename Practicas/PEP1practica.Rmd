@@ -1,0 +1,39 @@
+---
+title: "PEP1"
+author: "Martin Araya, Benjamin Letelier"
+date: "2026-07-11"
+output: html_document
+---
+Se dispone de un registro académico (EI-2025-2-PE1-Datos.csv) que tabula el rendimiento de una cohorte de estudiantes en una asignatura. El diseño de la base de datos contiene vectores que definen la identidad (id), características demográficas (sexo: "mujer", "hombre"), la técnica de transferencia de conocimiento asignada (modalidad: "tradicional", "invertida", "seminvertida") y el rendimiento métrico en tres hitos de evaluación continua (nota1, nota2, nota3). Las rúbricas de corrección están estandarizadas para asegurar que la variable de calificación se comporte, como mínimo, en una escala de intervalo.
+
+### PREGUNTA 1: Contraste de Efectividad Metodológica (Diseño Inter-Sujetos)
+Comparación de múltiples grupos independientes (K = 3) sobre una variable métrica.
+
+Enunciado:
+Aísle el vector de datos para trabajar exclusivamente con las observaciones registradas como "mujer". Fije la semilla de pseudoaleatoriedad en 21 y extraiga una muestra de 80 estudiantes.
+
+A un nivel de significancia del 5%, el equipo docente necesita determinar si el desempeño en el primer hito evaluativo (nota1) presenta diferencias atribuibles a la metodología de enseñanza cursada.
+
+Formule las hipótesis nula y alternativa.
+
+Compruebe de manera exhaustiva las condiciones probabilísticas necesarias (normalidad de subpoblaciones y homogeneidad de varianzas) para aplicar un modelo lineal general (ANOVA).
+
+Dependiendo de si la aduana de supuestos colapsa o se mantiene, aplique la prueba inferencial pertinente y concluya en el contexto del problema. Si el test global resulta significativo, omita la ejecución de pruebas post-hoc.
+
+```{r}
+library(dplyr)
+
+# 1. Carga de datos (usando csv2 por estándar de notas decimales)
+datos <- read.csv2("EI-2026-2-PE1-Datos.csv")
+
+
+
+# 2. Filtrado y Muestreo KISS usando el pipe (%>%)
+datos_mujer = filter(datos, sexo == "mujer")
+
+set.seed(21)
+muestra_80 = slice_sample(datos_mujer, n = 80) # sample_n(80) también es válido
+
+
+```
+
