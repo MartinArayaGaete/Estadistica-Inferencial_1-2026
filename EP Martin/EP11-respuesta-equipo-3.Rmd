@@ -1,0 +1,574 @@
+---
+title: "EP11-respuesta-equipo-3"
+author: "Grupo 3"
+date: "2026-08-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = TRUE)
+```
+
+# 1.
+Definir la semilla a utilizar, que corresponde a los primeros cinco dígitos del RUN del integrante de mayor edad del equipo.
+
+```{r}
+set.seed(21336)
+```
+
+La semilla utilizada es 21336, correspondiente a los primeros cinco dígitos del RUN del integrante de mayor edad.
+
+
+# 2.
+Seleccionar una muestra de 100 personas, asegurando que la mitad tenga estado nutricional "sobrepeso" y la otra mitad "no sobrepeso".
+
+```{r}
+library(dplyr)
+
+datos <- read.csv2("EP09 Datos.csv", stringsAsFactors = TRUE)
+
+# Crear las variables IMC y EN.
+# EN = 1 corresponde a sobrepeso y EN = 0 a no sobrepeso.
+datos$IMC <- datos$Weight / ((datos$Height / 100)^2)
+datos$EN <- ifelse(datos$IMC >= 23.2, 1, 0)
+
+datos_sobrepeso <- filter(datos, EN == 1)
+datos_no_sobrepeso <- filter(datos, EN == 0)
+
+muestra_sobrepeso <- slice_sample(datos_sobrepeso, n = 50)
+muestra_no_sobrepeso <- slice_sample(datos_no_sobrepeso, n = 50)
+
+muestra <- rbind(muestra_sobrepeso, muestra_no_sobrepeso)
+muestra <- muestra[sample(nrow(muestra)), ]
+
+# Verificar tamaño y balance de la muestra.
+nrow(muestra)
+table(muestra$EN)
+```
+La muestra tiene 100 observaciones y queda balanceada con 50 personas con sobrepeso y 50 sin sobrepeso.
+
+# 3.
+Usando las herramientas del paquete `leaps`, realizar una búsqueda exhaustiva para seleccionar entre dos y ocho predictores que ayuden a estimar la variable Peso (`Weight`), sin considerar `IMC` ni `EN`. Luego construir el modelo de regresión lineal múltiple con `caret` y evaluarlo usando bootstrapping.
+
+## Selección exhaustiva de predictores
+
+```{r}
+library(leaps)
+library(caret)
+
+predictoras_peso <- names(muestra)[
+  !names(muestra) %in% c("Weight", "IMC", "EN")
+]
+
+formula_completa <- as.formula(
+  paste("Weight ~", paste(predictoras_peso, collapse = " + "))
+)
+
+busqueda <- regsubsets(
+  formula_completa,
+  data = muestra,
+  nbest = 1,
+  nvmax = 8,
+  method = "exhaustive"
+)
+
+resumen_busqueda <- summary(busqueda)
+
+candidatos <- 2:8
+
+tabla_busqueda <- data.frame(
+  n_predictores = candidatos,
+  R2_ajustado = resumen_busqueda$adjr2[candidatos],
+  BIC = resumen_busqueda$bic[candidatos]
+)
+
+tabla_busqueda$R2_ajustado <- round(tabla_busqueda$R2_ajustado, 4)
+tabla_busqueda$BIC <- round(tabla_busqueda$BIC, 2)
+
+tabla_busqueda
+
+mejor_n_r2 <- tabla_busqueda$n_predictores[
+  which.max(tabla_busqueda$R2_ajustado)
+]
+
+mejor_n_bic <- tabla_busqueda$n_predictores[
+  which.min(tabla_busqueda$BIC)
+]
+
+mejor_n_r2
+mejor_n_bic
+```
+
+En esta muestra, el máximo \(R^2\) ajustado se obtiene con `r mejor_n_r2` predictores y el menor BIC con `r mejor_n_bic` predictores. `r if (mejor_n_r2 == mejor_n_bic) "Como ambos criterios coinciden, se utiliza ese conjunto de variables." else "Como los criterios no coinciden, se utiliza el conjunto escogido por BIC, ya que este criterio penaliza la complejidad del modelo."`
+
+```{r}
+mejor_n_peso <- mejor_n_bic
+
+predictores_peso <- names(
+  coef(busqueda, id = mejor_n_peso)
+)[-1]
+
+predictores_peso
+
+formula_peso <- reformulate(
+  predictores_peso,
+  response = "Weight"
+)
+
+formula_peso
+```
+
+Los predictores seleccionados son: `r paste(predictores_peso, collapse = ", ")`.
+
+## Modelo de regresión lineal múltiple con bootstrapping
+
+```{r}
+set.seed(21336)
+
+control_boot <- trainControl(
+  method = "boot",
+  number = 2000
+)
+
+modelo_boot <- train(
+  formula_peso,
+  data = muestra,
+  method = "lm",
+  trControl = control_boot
+)
+
+modelo_boot
+summary(modelo_boot$finalModel)
+```
+
+El modelo final explica una proporción alta de la variabilidad del peso en la muestra. La evaluación bootstrap entrega un RMSE de `r round(modelo_boot$results$RMSE[1], 3)`, un \(R^2\) de `r round(modelo_boot$results$Rsquared[1], 3)` y un MAE de `r round(modelo_boot$results$MAE[1], 3)`. Estas métricas provienen de remuestreos y, por lo tanto, son más útiles para evaluar la capacidad predictiva que considerar solamente el ajuste sobre los mismos datos utilizados para construir el modelo.
+
+# 4.
+Usando Recursive Feature Elimination (RFE), construir un modelo de regresión lineal múltiple para predecir `IMC` que incluya entre 10 y 20 predictores, seleccionando el conjunto que maximice \(R^2\), con cinco repeticiones de validación cruzada de cinco pliegues. No se consideran `Weight`, `Height` ni `EN`.
+
+## Selección de predictores mediante RFE
+
+```{r}
+predictoras_imc <- names(muestra)[!names(muestra) %in% c("Weight", "Height", "EN", "IMC")
+]
+
+x_imc <- muestra[, predictoras_imc]
+y_imc <- muestra[["IMC"]]
+
+# caret comienza RFE ajustando primero un modelo con todos los predictores.
+# Esta pequeña modificación obliga a que el tamaño finalmente escogido
+# quede dentro del intervalo pedido en el enunciado: 10 a 20 variables.
+funciones_imc <- lmFuncs
+funciones_imc$selectSize <- function(x, metric, maximize) {
+  x <- x[x$Variables %in% 10:20, , drop = FALSE]
+  pickSizeBest(x, metric, maximize)
+}
+
+set.seed(21336)
+control_rfe <- rfeControl(
+  functions = lmFuncs,
+  method = "repeatedcv",
+  number = 5,
+  repeats = 5
+)
+
+rfe_imc <- rfe(
+  x = x_imc,
+  y = y_imc,
+  sizes = 10:20,
+  rfeControl = control_rfe,
+  metric = "Rsquared"
+)
+
+rfe_imc
+```
+
+Es normal que en la tabla aparezca también el modelo con todos los predictores disponibles, porque RFE comienza desde el conjunto completo. Sin embargo, la función de selección anterior restringe la elección final a los tamaños pedidos por el enunciado.
+
+```{r}
+# Cantidad óptima de predictores
+rfe_imc$optsize
+
+# Variables seleccionadas
+predictors(rfe_imc)
+
+# Modelo final
+summary(rfe_imc$fit)
+```
+
+```{r}
+resultado_imc <- rfe_imc$results[
+  rfe_imc$results$Variables == rfe_imc$optsize,
+]
+
+resultado_imc
+```
+
+RFE seleccionó `r rfe_imc$optsize` predictores. En la validación cruzada de cinco pliegues repetida cinco veces, este tamaño obtuvo un \(R^2\) promedio de `r round(resultado_imc$Rsquared, 4)`, un RMSE de `r round(resultado_imc$RMSE, 3)` y un MAE de `r round(resultado_imc$MAE, 3)`.
+
+El modelo ajustado con todos los datos puede presentar un \(R^2\) mayor que el obtenido durante la validación cruzada. Para evaluar su capacidad predictiva se considera principalmente el resultado del remuestreo, porque cada pliegue evalúa observaciones que no fueron usadas para ajustar el modelo de ese pliegue.
+
+# 5.
+Usando RFE, construir un modelo de regresión logística múltiple para `EN` que incluya entre dos y seis predictores, seleccionando el conjunto con mejor curva ROC y usando validación cruzada dejando uno fuera (LOOCV). No se consideran `Weight`, `Height` ni `IMC`.
+
+## Preparación de la respuesta y predictores
+
+```{r}
+predictoras_en <- names(muestra)[
+  !names(muestra) %in% c("Weight", "Height", "IMC", "EN")
+]
+
+x_en <- muestra[, predictoras_en]
+
+# twoClassSummary considera el primer nivel como el evento de interés.
+# Por eso se deja "Sobrepeso" como primer nivel.
+y_en <- factor(
+  ifelse(muestra$EN == 1, "Sobrepeso", "No_sobrepeso"),
+  levels = c("Sobrepeso", "No_sobrepeso")
+)
+
+table(y_en)
+```
+
+## RFE para regresión logística
+
+```{r}
+# lrFuncs contiene las funciones de caret para usar RFE con
+# regresión logística. Se cambia la función resumen para evaluar ROC.
+funciones_en <- lrFuncs
+funciones_en$summary <- twoClassSummary
+
+# Al igual que en el punto anterior, se impide que el conjunto completo
+# pueda ser elegido como solución final, porque el enunciado pide 2 a 6.
+funciones_en$selectSize <- function(x, metric, maximize) {
+  x <- x[x$Variables %in% 2:6, , drop = FALSE]
+  pickSizeBest(x, metric, maximize)
+}
+
+control_rfe_en <- rfeControl(
+  functions = funciones_en,
+  method = "LOOCV"
+)
+
+set.seed(21336)
+
+rfe_en <- rfe(
+  x = x_en,
+  y = y_en,
+  sizes = 2:6,
+  rfeControl = control_rfe_en,
+  metric = "ROC"
+)
+
+rfe_en
+```
+
+```{r}
+# Resultados para los tamaños permitidos por el enunciado
+resultados_en <- rfe_en$results[
+  rfe_en$results$Variables %in% 2:6,
+  c("Variables", "ROC", "Sens", "Spec")
+]
+
+resultados_en
+
+# Cantidad y variables del modelo escogido
+rfe_en$optsize
+predictors(rfe_en)
+
+# Modelo logístico final
+summary(rfe_en$fit)
+```
+
+```{r}
+resultado_en <- rfe_en$results[
+  rfe_en$results$Variables == rfe_en$optsize,
+]
+
+resultado_en
+```
+
+El conjunto escogido tiene `r rfe_en$optsize` predictores: `r paste(predictors(rfe_en), collapse = ", ")`. Su evaluación LOOCV obtuvo un área bajo la curva ROC de `r round(resultado_en$ROC, 4)`, sensibilidad de `r round(resultado_en$Sens, 4)` y especificidad de `r round(resultado_en$Spec, 4)`.
+
+# 6.
+Pronunciarse sobre la confiabilidad y el poder predictivo de los modelos obtenidos.
+
+Para esta parte se siguen las comprobaciones usadas en los capítulos de regresión lineal: revisar ajuste, linealidad, comportamiento de residuos, homocedasticidad, independencia, multicolinealidad, observaciones influyentes y desempeño en datos no utilizados para ajustar cada remuestra o pliegue.
+
+```{r}
+library(car)
+```
+
+## 6.1. Modelo para predecir Weight
+```{r}
+modelo_peso <- modelo_boot$finalModel
+
+# Pruebas de curvatura para los predictores y para los valores ajustados.
+linealidad_peso <- residualPlots(
+  modelo_peso,
+  fitted = TRUE,
+  plot = FALSE
+)
+linealidad_peso
+
+# Revisión visual sencilla de la distribución de los residuos.
+hist(
+  rstudent(modelo_peso),
+  main = "Residuos estudentizados - modelo Weight",
+  xlab = "Residuo estudentizado"
+)
+
+# Homocedasticidad.
+ncv_peso <- ncvTest(modelo_peso)
+ncv_peso
+
+# Independencia de los residuos.
+set.seed(21336)
+dw_peso <- durbinWatsonTest(modelo_peso)
+dw_peso
+
+# Multicolinealidad.
+vif_peso <- vif(modelo_peso)
+vif_peso
+
+# Casos que conviene revisar por residuo, apalancamiento o distancia de Cook.
+diag_peso <- data.frame(
+  StudRes = rstudent(modelo_peso),
+  Hat = hatvalues(modelo_peso),
+  CookD = cooks.distance(modelo_peso)
+)
+
+umbral_hat_peso <- 2 * mean(diag_peso$Hat)
+
+casos_revisar_peso <- diag_peso[
+  abs(diag_peso$StudRes) > 2 |
+    diag_peso$Hat > umbral_hat_peso |
+    diag_peso$CookD > 1,
+]
+
+casos_revisar_peso
+influencePlot(modelo_peso)
+
+# Distribución de las métricas obtenidas en los remuestreos bootstrap.
+summary(
+  modelo_boot$resample[, c("RMSE", "Rsquared", "MAE")]
+)
+
+apply(
+  modelo_boot$resample[, c("RMSE", "Rsquared", "MAE")],
+  2,
+  sd,
+  na.rm = TRUE
+)
+
+# Guía orientativa de observaciones por predictor mencionada en el capítulo 14.
+nrow(muestra) / length(predictores_peso)
+```
+
+```{r}
+linealidad_ok_peso <- all(
+  linealidad_peso[, 2] > 0.05,
+  na.rm = TRUE
+)
+
+homocedasticidad_ok_peso <- ncv_peso$p > 0.05
+independencia_ok_peso <- dw_peso$p > 0.05
+
+max_vif_peso <- max(vif_peso)
+
+n_casos_peso <- nrow(casos_revisar_peso)
+obs_por_predictor_peso <- nrow(muestra) / length(predictores_peso)
+```
+
+Para el modelo de `Weight`, `r if (linealidad_ok_peso) "las pruebas de curvatura no entregan evidencia suficiente de una relación no lineal." else "al menos una prueba de curvatura resulta significativa, por lo que la linealidad debe revisarse antes de confiar completamente en el modelo."` `r if (homocedasticidad_ok_peso) "La prueba ncvTest no entrega evidencia de varianza no constante." else "La prueba ncvTest entrega evidencia de varianza no constante, por lo que aparece una posible violación de homocedasticidad."` `r if (independencia_ok_peso) "Tampoco se detecta evidencia de autocorrelación mediante Durbin-Watson." else "Durbin-Watson detecta evidencia de autocorrelación, lo que debilita la condición de independencia."`
+
+El VIF máximo es `r round(max_vif_peso, 3)`. `r if (max_vif_peso > 10) "Según los criterios de la lectura, esto corresponde a multicolinealidad severa." else if (max_vif_peso > 5) "Este valor queda en la zona que la lectura considera preocupante, por lo que los coeficientes deben interpretarse con cautela." else "Este valor no supera el umbral de 5 usado en la lectura como señal de preocupación importante."`
+
+Se identifican `r n_casos_peso` observaciones que conviene revisar por residuo, apalancamiento o distancia de Cook. No se eliminan automáticamente, porque la lectura advierte que una observación problemática debe analizarse antes de tomar esa decisión.
+
+La muestra aporta aproximadamente `r round(obs_por_predictor_peso, 1)` observaciones por predictor, `r if (obs_por_predictor_peso >= 10) "lo que alcanza la guía orientativa mínima de 10 observaciones por predictor mencionada en el capítulo 14." else "lo que queda por debajo de la guía orientativa de 10 a 15 observaciones por predictor mencionada en el capítulo 14."`
+
+En capacidad predictiva, el bootstrap obtuvo RMSE = `r round(modelo_boot$results$RMSE[1], 3)`, MAE = `r round(modelo_boot$results$MAE[1], 3)` y \(R^2\) = `r round(modelo_boot$results$Rsquared[1], 3)`. Por ello, el modelo presenta un error predictivo pequeño en relación con la escala del peso observada en la muestra, aunque las advertencias obtenidas en los diagnósticos anteriores siguen siendo relevantes.
+
+## 6.2. Modelo para predecir IMC
+```{r}
+modelo_imc <- rfe_imc$fit
+
+# Pruebas de curvatura.
+linealidad_imc <- residualPlots(
+  modelo_imc,
+  fitted = TRUE,
+  plot = FALSE
+)
+linealidad_imc
+
+# Revisión visual de los residuos.
+hist(
+  rstudent(modelo_imc),
+  main = "Residuos estudentizados - modelo IMC",
+  xlab = "Residuo estudentizado"
+)
+
+# Homocedasticidad.
+ncv_imc <- ncvTest(modelo_imc)
+ncv_imc
+
+# Independencia.
+set.seed(21336)
+dw_imc <- durbinWatsonTest(modelo_imc)
+dw_imc
+
+# Multicolinealidad.
+vif_imc <- vif(modelo_imc)
+vif_imc
+
+# Observaciones que conviene revisar.
+diag_imc <- data.frame(
+  StudRes = rstudent(modelo_imc),
+  Hat = hatvalues(modelo_imc),
+  CookD = cooks.distance(modelo_imc)
+)
+
+umbral_hat_imc <- 2 * mean(diag_imc$Hat)
+
+casos_revisar_imc <- diag_imc[
+  abs(diag_imc$StudRes) > 2 |
+    diag_imc$Hat > umbral_hat_imc |
+    diag_imc$CookD > 1,
+]
+
+casos_revisar_imc
+influencePlot(modelo_imc)
+
+# Distribución de las métricas de validación cruzada para el tamaño elegido.
+summary(
+  rfe_imc$resample[, c("RMSE", "Rsquared", "MAE")]
+)
+
+apply(
+  rfe_imc$resample[, c("RMSE", "Rsquared", "MAE")],
+  2,
+  sd,
+  na.rm = TRUE
+)
+
+nrow(muestra) / rfe_imc$optsize
+```
+
+```{r}
+linealidad_ok_imc <- all(
+  linealidad_imc[, 2] > 0.05,
+  na.rm = TRUE
+)
+
+homocedasticidad_ok_imc <- ncv_imc$p > 0.05
+independencia_ok_imc <- dw_imc$p > 0.05
+
+max_vif_imc <- max(vif_imc)
+
+n_casos_imc <- nrow(casos_revisar_imc)
+obs_por_predictor_imc <- nrow(muestra) / rfe_imc$optsize
+```
+
+Para el modelo de `IMC`, `r if (linealidad_ok_imc) "las pruebas de curvatura no entregan evidencia suficiente de no linealidad." else "existe al menos una señal de curvatura significativa y, por lo tanto, la condición de linealidad necesita revisión."` `r if (homocedasticidad_ok_imc) "ncvTest no entrega evidencia de varianza no constante." else "ncvTest entrega evidencia de varianza no constante, por lo que la homocedasticidad es una fuente de preocupación."` `r if (independencia_ok_imc) "Durbin-Watson no entrega evidencia de autocorrelación de los residuos." else "Durbin-Watson entrega evidencia de autocorrelación de los residuos."`
+
+El VIF máximo es `r round(max_vif_imc, 3)`. `r if (max_vif_imc > 10) "Este resultado cae en la zona de multicolinealidad severa señalada en la lectura, por lo que los coeficientes individuales pueden ser inestables y no deberían interpretarse aisladamente." else if (max_vif_imc > 5) "Existe multicolinealidad preocupante según los criterios de la lectura." else "No aparece multicolinealidad importante según el umbral de 5."`
+
+Además, se identifican `r n_casos_imc` observaciones que conviene revisar. La muestra aporta solamente `r round(obs_por_predictor_imc, 1)` observaciones por predictor. `r if (obs_por_predictor_imc < 10) "Esto queda por debajo de la guía orientativa de 10 a 15 observaciones por predictor del capítulo 14, por lo que la generalidad del modelo debe considerarse con cautela." else "Esto alcanza la guía orientativa mínima indicada en la lectura."`
+
+A pesar de estos problemas, la validación cruzada repetida obtuvo \(R^2\) = `r round(resultado_imc$Rsquared, 4)`, RMSE = `r round(resultado_imc$RMSE, 3)` y MAE = `r round(resultado_imc$MAE, 3)`. Por lo tanto, el modelo muestra capacidad predictiva dentro de la muestra estudiada, pero su confiabilidad es más discutible que la del modelo de peso si aparecen las advertencias señaladas por los diagnósticos.
+
+No se eliminan predictores automáticamente, ya que el enunciado pide seleccionar el conjunto que maximice \(R^2\) dentro de 10 a 20 variables. Corregir los problemas detectados implicaría repetir el proceso de construcción y evaluación del modelo.
+
+## 6.3. Modelo logístico para predecir EN
+Para el modelo logístico no se aplican `ncvTest()` ni la prueba de Durbin-Watson de la misma forma que en los modelos lineales anteriores. Se revisa el ajuste respecto del modelo nulo, la posible forma no lineal mediante gráficos, la multicolinealidad, las observaciones influyentes y, principalmente, el desempeño ROC obtenido con LOOCV.
+
+```{r}
+modelo_en <- rfe_en$fit
+modelo_nulo_en <- update(modelo_en, . ~ 1)
+
+summary(modelo_en)
+
+# Comparar con un modelo sin predictores.
+anova(
+  modelo_nulo_en,
+  modelo_en,
+  test = "Chisq"
+)
+
+AIC(
+  modelo_nulo_en,
+  modelo_en
+)
+
+# Gráficos de residuos para GLM.
+residualPlots(modelo_en)
+
+# Gráficos componente + residuo.
+crPlots(
+  modelo_en,
+  layout = c(2, 3)
+)
+
+# Multicolinealidad.
+vif_en <- vif(modelo_en)
+vif_en
+
+# Observaciones que conviene revisar.
+diag_en <- data.frame(
+  StudRes = rstudent(modelo_en),
+  Hat = hatvalues(modelo_en),
+  CookD = cooks.distance(modelo_en)
+)
+
+umbral_hat_en <- 2 * mean(diag_en$Hat)
+
+casos_revisar_en <- diag_en[
+  abs(diag_en$StudRes) > 2 |
+    diag_en$Hat > umbral_hat_en |
+    diag_en$CookD > 1,
+]
+
+casos_revisar_en
+influencePlot(modelo_en)
+
+# El ajuste final debe haber convergido.
+modelo_en$converged
+
+# Desempeño LOOCV del tamaño elegido.
+resultado_en[, c("Variables", "ROC", "Sens", "Spec")]
+```
+
+```{r}
+lrt_en <- anova(
+  modelo_nulo_en,
+  modelo_en,
+  test = "Chisq"
+)
+
+# El nombre exacto de la columna de valor p puede variar ligeramente
+# entre versiones, por lo que se identifica por el prefijo "Pr".
+col_p_lrt <- grep("^Pr", names(lrt_en), value = TRUE)[1]
+p_lrt_en <- lrt_en[2, col_p_lrt]
+
+max_vif_en <- max(vif_en)
+n_casos_en <- nrow(casos_revisar_en)
+```
+
+El contraste de razón de verosimilitudes entrega un valor p de `r format.pval(p_lrt_en, digits = 3)`. `r if (!is.na(p_lrt_en) && p_lrt_en < 0.05) "Esto indica que el modelo con los predictores seleccionados mejora significativamente el ajuste respecto del modelo nulo." else "No se obtiene evidencia suficiente de una mejora del ajuste respecto del modelo nulo."`
+
+El VIF máximo del modelo es `r round(max_vif_en, 3)`. `r if (max_vif_en > 10) "Este valor indica una multicolinealidad severa y obliga a ser muy cautelosos con los coeficientes." else if (max_vif_en > 5) "El valor indica multicolinealidad preocupante." else "No supera el umbral de 5 utilizado como señal de preocupación importante en los modelos anteriores."` Se identifican `r n_casos_en` observaciones que conviene revisar por influencia, pero no se eliminan automáticamente.
+
+`r if (isTRUE(modelo_en$converged)) "El ajuste logístico final informó convergencia." else "El ajuste logístico final no informó convergencia, por lo que el modelo no debería utilizarse sin corregir ese problema."`
+
+En capacidad predictiva, el modelo seleccionado mediante RFE y LOOCV obtuvo ROC = `r round(resultado_en$ROC, 4)`, sensibilidad = `r round(resultado_en$Sens, 4)` y especificidad = `r round(resultado_en$Spec, 4)`. Como LOOCV deja exactamente una observación fuera en cada ajuste, cada persona es evaluada una vez por un modelo que no fue construido usando esa observación.
+
+## Conclusión general
+
+El modelo para `Weight` es el que presenta el mejor desempeño predictivo de los tres en términos de proporción explicada, con \(R^2\) bootstrap = `r round(modelo_boot$results$Rsquared[1], 3)` y RMSE = `r round(modelo_boot$results$RMSE[1], 3)`. Su confiabilidad final depende de las advertencias observadas en VIF e influencia, pero la cantidad de observaciones por predictor es razonable según la guía de la lectura.
+
+El modelo para `IMC` alcanza \(R^2\) de validación cruzada = `r round(resultado_imc$Rsquared, 3)` y RMSE = `r round(resultado_imc$RMSE, 3)`. Sin embargo, utiliza `r rfe_imc$optsize` predictores con solo 100 observaciones, por lo que `r if (obs_por_predictor_imc < 10) "queda claramente por debajo de la guía orientativa de tamaño muestral y su generalidad es la principal debilidad." else "el tamaño muestral no queda por debajo de la guía mínima utilizada."`
+
+El modelo de `EN` entrega ROC = `r round(resultado_en$ROC, 3)`, sensibilidad = `r round(resultado_en$Sens, 3)` y especificidad = `r round(resultado_en$Spec, 3)` mediante LOOCV. Estas métricas permiten evaluar directamente su capacidad para discriminar entre ambos estados nutricionales en observaciones que fueron dejadas fuera de cada ajuste.
+
+En consecuencia, los tres modelos pueden utilizarse como modelos predictivos dentro del contexto de esta muestra, pero no con el mismo grado de confianza. Las métricas de remuestreo deben considerarse junto con los diagnósticos del modelo y no solamente con el \(R^2\) o el ajuste obtenido usando todos los datos.
