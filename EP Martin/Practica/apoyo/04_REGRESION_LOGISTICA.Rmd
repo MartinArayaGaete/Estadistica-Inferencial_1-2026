@@ -1,0 +1,173 @@
+---
+title: "Regresión logística"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE, warning = FALSE)
+```
+
+# ¿CUÁNDO USAR ESTE ARCHIVO?
+
+Si la respuesta tiene dos clases, especialmente si aparece `empleo_fl`, probabilidades, clasificación, matriz de confusión o ROC.
+
+# Preparar entrenamiento y prueba
+
+Se usan 300 personas: 150 con empleo y 150 sin empleo. Cien de cada clase quedan en entrenamiento y 50 de cada clase en prueba.
+
+```{r datos}
+library(dplyr)
+
+datos <- read.csv("DatosPEP.csv")
+
+set.seed(21336)
+
+con_empleo <- datos |>
+  filter(empleo_fl == 1) |>
+  slice_sample(n = 150)
+
+sin_empleo <- datos |>
+  filter(empleo_fl == 0) |>
+  slice_sample(n = 150)
+
+entrenamiento <- rbind(
+  con_empleo[1:100, ],
+  sin_empleo[1:100, ]
+)
+
+prueba <- rbind(
+  con_empleo[101:150, ],
+  sin_empleo[101:150, ]
+)
+
+entrenamiento <- entrenamiento[sample(nrow(entrenamiento)), ]
+prueba <- prueba[sample(nrow(prueba)), ]
+
+table(entrenamiento$empleo_fl)
+table(prueba$empleo_fl)
+```
+
+# Construcción
+
+```{r modelo}
+modelo_log <- glm(
+  empleo_fl ~ sexo + tipo_edu + egreso + hab_dig + hab_ciud + hab_num + hab_verb,
+  data = entrenamiento,
+  family = binomial
+)
+
+summary(modelo_log)
+```
+
+- Coeficiente positivo: aumenta el log-odds de `empleo_fl = 1`.
+- Coeficiente negativo: disminuye el log-odds.
+- `Pr(>|z|) < 0,05`: evidencia de que el predictor aporta, manteniendo constantes los demás.
+
+# Comparación con modelo nulo
+
+```{r lrt}
+modelo_nulo <- glm(
+  empleo_fl ~ 1,
+  data = entrenamiento,
+  family = binomial
+)
+
+anova(modelo_nulo, modelo_log, test = "LRT")
+```
+
+> Como p < 0,05, el modelo con predictores mejora significativamente el ajuste respecto del modelo nulo.
+
+# AIC y deviance
+
+```{r aic-deviance}
+AIC(modelo_nulo, modelo_log)
+summary(modelo_log)
+```
+
+- Menor AIC: mejor equilibrio entre ajuste y complejidad.
+- `Residual deviance` menor que `Null deviance`: los predictores reducen la falta de ajuste.
+
+# Predicción de probabilidades
+
+```{r probabilidades}
+prob_prueba <- predict(
+  modelo_log,
+  newdata = prueba,
+  type = "response"
+)
+
+head(prob_prueba)
+```
+
+# Umbral 0,5
+
+```{r umbral}
+pred_clase <- ifelse(
+  prob_prueba >= 0.5,
+  "Empleo",
+  "No_empleo"
+)
+
+pred_clase <- factor(
+  pred_clase,
+  levels = c("Empleo", "No_empleo")
+)
+
+real <- factor(
+  ifelse(prueba$empleo_fl == 1, "Empleo", "No_empleo"),
+  levels = c("Empleo", "No_empleo")
+)
+```
+
+# Matriz de confusión
+
+```{r confusion}
+library(caret)
+
+mc <- confusionMatrix(
+  data = pred_clase,
+  reference = real,
+  positive = "Empleo"
+)
+
+mc$table
+mc$overall
+mc$byClass
+```
+
+- Accuracy: proporción total clasificada correctamente.
+- Sensibilidad: proporción de personas con empleo detectadas correctamente.
+- Especificidad: proporción de personas sin empleo detectadas correctamente.
+
+# ROC y AUC
+
+```{r roc}
+library(pROC)
+
+curva <- roc(
+  response = prueba$empleo_fl,
+  predictor = prob_prueba,
+  levels = c(0, 1),
+  direction = "<"
+)
+
+curva
+auc(curva)
+plot(curva)
+```
+
+- Cerca de 0,5: poca discriminación.
+- Más alto: mejor discriminación.
+- 1: discriminación perfecta.
+
+> El AUC debe interpretarse con los datos de prueba, porque no fueron usados para ajustar el modelo.
+
+# RFE logística
+
+Si además pide seleccionar predictores mediante RFE, ir a `03_SELECCION_PREDICTORES.Rmd`.
+
+# RELACIONADO
+
+- RFE y LOOCV + ROC -> `03_SELECCION_PREDICTORES.Rmd`
+- Confiabilidad y poder predictivo -> `05_DIAGNOSTICO_VALIDACION.Rmd`
+- Frases rápidas -> `07_INTERPRETACIONES_RAPIDAS.Rmd`

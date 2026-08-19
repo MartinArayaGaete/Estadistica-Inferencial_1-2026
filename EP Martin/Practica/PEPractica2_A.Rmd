@@ -1,0 +1,45 @@
+---
+title: "PEPractica 2"
+author: "Grupo 8"
+date: "2026-08-19"
+output: html_document
+---
+
+## Pregunta 1. Bootstrap para dos muestras independientes
+
+Utilice el archivo DatosPEP.csv.
+
+1. Fije la semilla en 1319.
+
+2. Seleccione de la Región de Valparaíso una muestra aleatoria de 120 personas, asegurando que 60 correspondan a tipo_edu = 0 y 60 a tipo_edu = 1.
+
+3. Se desea estudiar si el puntaje promedio de hab_num difiere de acuerdo con el tipo de educación.
+
+4. Plantee formalmente las hipótesis nula y alternativa apropiadas, utilizando un nivel de significancia de α=0.05.
+
+5. Utilizando bootstrapping para dos muestras independientes, con 1999 remuestras y manteniendo los grupos estratificados por tipo_edu, estime la diferencia entre las medias poblacionales.
+
+6. Obtenga intervalos de confianza mediante los métodos t bootstrap, percentil y BCa.
+
+7. Pronúnciese sobre la existencia de una diferencia entre ambos tipos de educación.
+
+8. Compare los tres intervalos obtenidos y señale si la conclusión es estable frente al método de construcción del intervalo.
+
+```{r}
+datos = read.csv("DatosPEP.csv", stringsAsFactors = TRUE)
+
+set.seed(1319)
+
+library(dplyr)
+
+datos_valpo = filter(datos, region == 'Valparaiso') 
+
+datos_edu_0 = slice_sample(datos_sobrepeso, n = 60)
+datos_edu_1 = slice_sample(datos_no_sobrepeso, n = 60)
+
+
+datos_entrenamiento = rbind(datos_sobrepeso_muestra[1:50, ],  datos_no_sobrepeso_muestra[1:50, ])
+
+datos_prueba = rbind(datos_sobrepeso_muestra[51:75, ], datos_no_sobrepeso_muestra[51:75, ])
+```
+

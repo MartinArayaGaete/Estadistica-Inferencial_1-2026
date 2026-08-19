@@ -18,6 +18,8 @@ library(dplyr)
 
 datos_hombre = filter(datos, Gender == 1)
 
+datos_hombre$IMC = datos_hombre$Weight / ((datos_hombre$Height / 100)^2)
+
 datos_sobrepeso = filter(datos_hombre, 23.2 <= Weight / ((Height/100)**2))
 datos_no_sobrepeso = filter(datos_hombre, 23.2 > Weight / ((Height/100)**2))
 
@@ -31,8 +33,10 @@ datos_no_sobrepeso_muestra = slice_sample(datos_no_sobrepeso, n = 75)
 
 
 datos_entrenamiento = rbind(datos_sobrepeso_muestra[1:50, ],  datos_no_sobrepeso_muestra[1:50, ])
+datos_entrenamiento = datos_entrenamiento[sample(nrow(datos_entrenamiento)), ]
 
 datos_prueba = rbind(datos_sobrepeso_muestra[51:75, ], datos_no_sobrepeso_muestra[51:75, ])
+datos_prueba = datos_prueba[sample(nrow(datos_prueba)), ]
 
 ```
 
@@ -88,7 +92,7 @@ Aunque Bitrochanteric.diameter presenta un valor p mayor que 0,05, la función s
 
 
 
-#6. 
+# 6. 
 Evaluar la confiabilidad y generalidad de los modelos (i.e. que tengan un buen nivel de ajuste, que cumplen las condiciones para RLogit y no están dominados por casos sobreinfluyentes) y “arreglarlos” en caso de que tengan algún problema.
 
 ### Bondad de ajuste
@@ -117,8 +121,7 @@ AIC(
   modelo_escalonado
 )
 ```
-El modelo nulo obtuvo un AIC de 140.62944, el de una variable 108.00379	y el escalonado 90.96621. Por lo tanto, dado qu eel AIC disminuye desde 140 a 90, se concluye que este ultimo ofrece el mejor equilibrio entre ajuste y complejidad, por lo que se elige como modelo final.
-
+El modelo nulo obtuvo un AIC de 140.629, el modelo de una variable obtuvo 108.004 y el modelo escalonado obtuvo 90.966. Como el modelo escalonado presenta el menor AIC, se considera que ofrece el mejor equilibrio entre ajuste y cantidad de predictores, por lo que se selecciona como modelo final.
 ### Linealidad
 
 ```{r}
@@ -128,7 +131,7 @@ residualPlots(modelo_escalonado, fitted = FALSE)
 # Gráficos de residuos parciales
 crPlots(modelo_escalonado)
 ```
-Los p_valores de Waist.Girth (0.5519), Bicep.Girth (0.8075), Bitrochanteric.diameter (0.6708) todos mayores a 0.05, entonces podriamos decir que no hay evidencia de no linealidad.
+Los valores p de Waist.Girth (0.5519), Bicep.Girth (0.8075) y Bitrochanteric.diameter (0.6708) fueron mayores que 0.05. Por lo tanto, no se encontró evidencia de relaciones no lineales entre los predictores y la respuesta transformada. Los gráficos de residuos parciales tampoco mostraron curvaturas pronunciadas.
 
 
 ### independencia de los residuos
@@ -136,5 +139,67 @@ Los p_valores de Waist.Girth (0.5519), Bicep.Girth (0.8075), Bitrochanteric.diam
 
 durbinWatsonTest(modelo_escalonado)
 ```
+La prueba de Durbin-Watson entregó un estadístico de 2.3113 y un valor p de 0.126. Como el valor p es mayor que 0.05, no se encontró evidencia de autocorrelación entre los residuos. Por lo tanto, no existen indicios suficientes para cuestionar la condición de independencia de los residuos.
 
-Dado que el p_value < 0.05, se rechaza la independencia de los datos
+### Multicolinealidad
+```{r}
+vif(modelo_escalonado)
+```
+Los valores VIF obtenidos para los tres predictores fueron cercanos a 1: Waist.Girth = 1.43, Bicep.Girth = 1.06 y Bitrochanteric.diameter = 1.49. Por lo tanto, no se observa evidencia de multicolinealidad fuerte entre los predictores del modelo.
+### tamaño muestral
+```{r}
+n_entrenamiento = nrow(datos_entrenamiento)
+n_predictores = 3
+
+cat("Observaciones en entrenamiento:", n_entrenamiento, "\n")
+cat("Predictores numéricos en el modelo:", n_predictores, "\n")
+cat("Observaciones por predictor:", n_entrenamiento / n_predictores, "\n")
+```
+Con 100 observaciones de entrenamiento y tres predictores numéricos, se cuenta con aproximadamente 33.3 observaciones por predictor. Este valor se encuentra por encima del mínimo sugerido en la lectura, por lo que la cantidad de información parece suficiente para construir el modelo.
+
+### Separación perfecta
+```{r}
+summary(modelo_escalonado)$coefficients
+```
+No aparecieron advertencias relacionadas con falta de convergencia o probabilidades ajustadas numéricamente iguales a 0 o 1. Además, los errores estándar no resultaron desproporcionadamente grandes respecto de los coeficientes. Por lo tanto, no se observan señales claras de separación perfecta.
+### casos influyentes
+```{r}
+influencePlot(modelo_escalonado)
+```
+El gráfico de influencia destacó las observaciones 43, 49, 73 y 82 como casos que conviene revisar. Las observaciones 49 y 73 presentaron residuos studentizados de 2.56 y -2.13, respectivamente, cuyos valores absolutos son superiores a 2. Las observaciones 43 y 82 mostraron valores de apalancamiento de 0.113 y 0.135, relativamente mayores que los demás casos identificados.
+
+Sin embargo, las distancias de Cook fueron 0.013 para la observación 43, 0.138 para la 49, 0.104 para la 73 y 0.136 para la 82. Estos valores son bajos y no indican que alguna observación esté modificando de manera excesiva el ajuste del modelo.
+
+Por lo tanto, aunque existen algunas observaciones que conviene revisar por sus residuos o apalancamiento, no se encontró evidencia de que el modelo esté dominado por casos sobreinfluyentes. En consecuencia, no fue necesario eliminar observaciones ni reconstruir el modelo.
+
+# 7. 
+Usando código estándar, evaluar el poder predictivo de los modelos con los datos de las 50 personas que no se incluyeron en su construcción en términos de sensibilidad y especificidad.
+
+```{r}
+# probabilidades del modelo de una variable sobre los datos de prueba
+prob_una_variable = predict(modelo_una_variable, newdata = datos_prueba, type = "response")
+pred_una_variable = factor(ifelse(prob_una_variable >= 0.5, 1, 0), levels = c(0, 1))
+
+# probabilidades del modelo escalonado sobre los datos de prueba
+prob_escalonado = predict(modelo_escalonado, newdata = datos_prueba, type = "response")
+pred_escalonado = factor(ifelse(prob_escalonado >= 0.5, 1, 0), levels = c(0, 1))
+
+EN_prueba = factor(datos_prueba$EN, levels = c(0, 1))
+```
+
+```{r}
+library(caret)
+
+matriz_una_variable = confusionMatrix(pred_una_variable, EN_prueba, positive = "1")
+matriz_una_variable
+```
+
+```{r}
+matriz_escalonado = confusionMatrix(pred_escalonado, EN_prueba, positive = "1")
+matriz_escalonado
+```
+Al evaluar ambos modelos con los datos de las 50 personas no utilizadas en su construcción (25 "sobrepeso" y 25 "no sobrepeso"), se obtuvo que el modelo de una variable Waist.Girth alcanzó una sensibilidad de 0.76 y una especificidad de 0.80 (exactitud = 0.78). El modelo escalonado de Waist.Girth + Bicep.Girth + Bitrochanteric.diameter obtuvo la misma sensibilidad (0.76) pero una especificidad más alta de 0.88 (exactitud = 0.82).
+
+Esto indica que ambos modelos identifican de manera igual de efectiva a las personas con sobrepeso (mismo número de verdaderos positivos), pero el modelo escalonado es un poco mejor detectando a las personas sin sobrepeso, ya que solo clasificó mal a 3 de 25 casos "no sobrepeso" (especificidad 0.88), frente a 5 de 25 del modelo de una variable (especificidad 0.80). Esta mejora en especificidad, junto con el aumento de la exactitud general de 0.78 a 0.82, indica que el modelo escalonado presentó un mejor desempeño predictivo en el conjunto de prueba.
+
+Por lo tanto, el modelo escalonado presentó un desempeño predictivo ligeramente mejor en los datos no utilizados para su construcción. Considerando también su menor AIC y los resultados de las pruebas de confiabilidad, se selecciona este modelo por sobre el modelo de una variable.

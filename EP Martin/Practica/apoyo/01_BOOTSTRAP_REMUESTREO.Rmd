@@ -1,0 +1,320 @@
+---
+title: "Bootstrap y remuestreo"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE, warning = FALSE)
+```
+
+# ¿Cuándo abro este archivo?
+
+Cuando el enunciado menciona bootstrap, remuestreo, intervalos de confianza, diferencia de medias o permutaciones.
+
+```text
+Una muestra                    -> bootstrap del estadístico
+Personas distintas             -> muestras independientes
+Mismas personas / antes-después -> diferencias individuales
+Reordenar valores bajo H0       -> permutación
+```
+
+# Preparación común
+
+```{r datos}
+datos <- read.csv("DatosPEP.csv")
+
+set.seed(21336)
+muestra <- datos[sample(nrow(datos), 300), ]
+```
+
+# Caso A: bootstrap de una muestra
+
+## Reconocer
+
+Una variable y piden un IC para su media, error estándar o sesgo mediante remuestras con reposición.
+
+```{r bootstrap-una}
+library(boot)
+
+valores <- muestra$hab_dig
+
+media_boot <- function(valores, indices) {
+  mean(valores[indices])
+}
+
+set.seed(21336)
+
+dist_bt <- boot(
+  data = valores,
+  statistic = media_boot,
+  R = 1999
+)
+
+print(dist_bt)
+
+boot.ci(
+  dist_bt,
+  conf = 0.95,
+  type = c("norm", "perc", "bca")
+)
+```
+
+Mira `original`, `bias`, `std. error` y los límites del IC. Frase:
+
+> Mediante 1999 remuestras bootstrap se obtuvo el IC del 95% para la media de `hab_dig` mostrado en el output.
+
+# Caso B: dos muestras independientes
+
+## Reconocer
+
+```text
+personas distintas
+-> muestras independientes
+-> diferencia de medias
+-> bootstrap estratificado por grupo
+```
+
+Aquí se define A = `sexo == 0`, B = `sexo == 1` y el estadístico es A-B.
+
+## Hipótesis
+
+**Bilateral**
+
+\[
+H_0:\mu_A-\mu_B=0
+\qquad
+H_A:\mu_A-\mu_B\neq0
+\]
+
+**Unilateral mayor**
+
+\[
+H_0:\mu_A-\mu_B=0
+\qquad
+H_A:\mu_A-\mu_B>0
+\]
+
+**Unilateral menor**
+
+\[
+H_0:\mu_A-\mu_B=0
+\qquad
+H_A:\mu_A-\mu_B<0
+\]
+
+## Código mínimo e IC bilateral
+
+```{r bootstrap-dos}
+library(dplyr)
+library(purrr)
+library(rsample)
+
+A <- muestra$hab_dig[muestra$sexo == 0]
+B <- muestra$hab_dig[muestra$sexo == 1]
+
+datos_largos <- data.frame(
+  grupo = factor(
+    c(rep("A", length(A)), rep("B", length(B))),
+    levels = c("A", "B")
+  ),
+  valor = c(A, B)
+)
+
+dif_dos_medias <- function(remuestra, ...) {
+  analysis(remuestra) |>
+    group_by(grupo) |>
+    summarise(
+      n = n(),
+      m = mean(valor),
+      v = var(valor),
+      .groups = "drop"
+    ) |>
+    summarise(
+      term = "Dif. 2 medias",
+      estimate = m[1] - m[2],
+      std.error = sqrt(sum(v / n))
+    )
+}
+
+set.seed(21336)
+
+remuestras <- bootstraps(
+  datos_largos,
+  times = 1999,
+  strata = grupo,
+  apparent = TRUE
+)
+
+dist_bt <- remuestras |>
+  mutate(stats = map(splits, dif_dos_medias))
+
+alfa <- 0.05
+
+ic_t <- dist_bt |> int_t(statistics = stats, alpha = alfa)
+ic_p <- dist_bt |> int_pctl(statistics = stats, alpha = alfa)
+ic_bca <- dist_bt |>
+  int_bca(
+    statistics = stats,
+    alpha = alfa,
+    .fn = dif_dos_medias
+  )
+
+bind_rows(ic_t, ic_p, ic_bca)
+```
+
+## Decisión y signo
+
+- Si el IC para A-B contiene 0, no hay evidencia suficiente de diferencia.
+- Si no contiene 0, hay evidencia de diferencia.
+- IC completamente positivo: la media de A es mayor que la de B.
+- IC completamente negativo: la media de A es menor que la de B.
+
+## IC unilateral mayor: A-B > 0
+
+Las funciones entregan IC bilaterales. Siguiendo la lectura, se usa el doble de alfa y se deja abierto el extremo superior.
+
+```{r bootstrap-mayor}
+ic_mayor <- dist_bt |>
+  int_bca(
+    statistics = stats,
+    alpha = 2 * alfa,
+    .fn = dif_dos_medias
+  ) |>
+  mutate(.upper = Inf)
+
+ic_mayor
+```
+
+Si el límite inferior es mayor que 0, existe evidencia para A-B > 0.
+
+## IC unilateral menor: A-B < 0
+
+```{r bootstrap-menor}
+ic_menor <- dist_bt |>
+  int_bca(
+    statistics = stats,
+    alpha = 2 * alfa,
+    .fn = dif_dos_medias
+  ) |>
+  mutate(.lower = -Inf)
+
+ic_menor
+```
+
+Si el límite superior es menor que 0, existe evidencia para A-B < 0.
+
+No relaciones un p-valor unilateral con el IC bilateral del bloque anterior.
+
+# Caso C: muestras apareadas
+
+## Reconocer
+
+> Mismas personas / antes-después → diferencias individuales.
+
+En este ejemplo, `hab_ciud` y `hab_dig` pertenecen a las mismas personas.
+
+```{r bootstrap-pareado}
+library(boot)
+
+diferencias <- muestra$hab_ciud - muestra$hab_dig
+
+media_boot <- function(valores, indices) {
+  mean(valores[indices])
+}
+
+set.seed(21336)
+
+dist_pareada <- boot(
+  data = diferencias,
+  statistic = media_boot,
+  R = 1999
+)
+
+boot.ci(
+  dist_pareada,
+  conf = 0.95,
+  type = c("norm", "perc", "bca")
+)
+```
+
+> Si el IC de la media de las diferencias contiene 0, no hay evidencia suficiente de cambio. Si no contiene 0, existe evidencia de diferencia entre ambas mediciones.
+
+# Caso D: permutaciones
+
+Usar cuando el enunciado pida reordenar valores bajo H0. El patrón aparece en el capítulo 12.
+
+```{r permutaciones}
+library(rsample)
+library(dplyr)
+library(purrr)
+
+dif_obs <- datos_largos |>
+  group_by(grupo) |>
+  summarise(m = mean(valor), .groups = "drop") |>
+  summarise(dif = m[1] - m[2]) |>
+  pull(dif)
+
+calc_dif <- function(split) {
+  analysis(split) |>
+    group_by(grupo) |>
+    summarise(m = mean(valor), .groups = "drop") |>
+    summarise(dif = m[1] - m[2]) |>
+    pull(dif)
+}
+
+set.seed(21336)
+
+perms <- permutations(
+  datos_largos,
+  permute = valor,
+  times = 5999,
+  apparent = FALSE
+)
+
+dif_perm <- map_dbl(perms$splits, calc_dif)
+
+p_bilateral <- (
+  sum(abs(dif_perm) >= abs(dif_obs)) + 1
+) / (length(dif_perm) + 1)
+
+p_mayor <- (
+  sum(dif_perm >= dif_obs) + 1
+) / (length(dif_perm) + 1)
+
+p_menor <- (
+  sum(dif_perm <= dif_obs) + 1
+) / (length(dif_perm) + 1)
+
+p_bilateral
+p_mayor
+p_menor
+```
+
+> Como p < 0,05, se rechaza H0. Si p >= 0,05, no hay evidencia suficiente para rechazar H0.
+
+# Caso E: métodos robustos
+
+Solo si el enunciado menciona datos atípicos, asimetría o un método robusto.
+
+```{r robustos}
+library(WRS2)
+
+# dos grupos independientes
+yuen(hab_dig ~ factor(sexo), data = muestra, tr = 0.2)
+
+# dos mediciones apareadas
+yuend(
+  x = muestra$hab_ciud,
+  y = muestra$hab_dig,
+  tr = 0.2
+)
+```
+
+Otras funciones que aparecen en la lectura: `winmean()`, `t1way()`, `lincon()`, `rmanova()`, `rmmcp()`, `rmanovab()` y `pairdepb()`.
+
+# RELACIONADO
+
+- Modelos lineales -> `02_REGRESION_LINEAL.Rmd`
+- Poder predictivo mediante remuestreo -> `05_DIAGNOSTICO_VALIDACION.Rmd`
+- Ejercicios tipo PEP -> `06_PREGUNTAS_TIPO_PEP.Rmd`
+

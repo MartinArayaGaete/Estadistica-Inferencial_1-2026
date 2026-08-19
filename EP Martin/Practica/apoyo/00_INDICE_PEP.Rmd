@@ -1,0 +1,112 @@
+---
+title: "Índice rápido para la PEP"
+output: html_document
+---
+
+# ¿CUÁNDO USAR ESTE ARCHIVO?
+
+Ábrelo primero. Lee el enunciado, reconoce la palabra clave y salta al archivo indicado.
+
+```text
+¿Qué pide?
+
+bootstrap / remuestras / IC / diferencia de medias
+    -> 01_BOOTSTRAP_REMUESTREO.Rmd
+
+Y numérica + uno o varios predictores
+    -> 02_REGRESION_LINEAL.Rmd
+
+seleccionar predictores
+    -> 03_SELECCION_PREDICTORES.Rmd
+
+Y binaria / empleo_fl
+    -> 04_REGRESION_LOGISTICA.Rmd
+
+confiabilidad / generalidad / supuestos
+    -> 05_DIAGNOSTICO_VALIDACION.Rmd
+
+poder predictivo / prueba / CV / bootstrap / ROC
+    -> 05_DIAGNOSTICO_VALIDACION.Rmd
+
+practicar preguntas completas
+    -> 06_PREGUNTAS_TIPO_PEP.Rmd
+
+redactar una conclusión breve
+    -> 07_INTERPRETACIONES_RAPIDAS.Rmd
+```
+
+| Si el enunciado dice... | Abrir |
+|---|---|
+| bootstrap, remuestras, IC | `01_BOOTSTRAP_REMUESTREO.Rmd` |
+| regresión lineal simple | `02_REGRESION_LINEAL.Rmd` |
+| regresión múltiple o jerárquica | `02_REGRESION_LINEAL.Rmd` |
+| búsqueda exhaustiva, leaps | `03_SELECCION_PREDICTORES.Rmd` |
+| RFE | `03_SELECCION_PREDICTORES.Rmd` |
+| `empleo_fl`, respuesta binaria | `04_REGRESION_LOGISTICA.Rmd` |
+| ROC, sensibilidad, especificidad | `04_REGRESION_LOGISTICA.Rmd` |
+| confiabilidad, generalidad, supuestos | `05_DIAGNOSTICO_VALIDACION.Rmd` |
+| frase para interpretar un output | `07_INTERPRETACIONES_RAPIDAS.Rmd` |
+
+# Chuleta de funciones
+
+```text
+read.csv()
+set.seed()
+sample()
+filter()
+slice_sample()
+
+boot()
+boot.ci()
+bootstraps()
+int_t()
+int_pctl()
+int_bca()
+permutations()
+
+lm()
+glm()
+summary()
+predict()
+anova()
+AIC()
+BIC()
+step()
+
+regsubsets()
+coef()
+rfeControl()
+rfe()
+predictors()
+trainControl()
+train()
+
+residualPlots()
+marginalModelPlots()
+ncvTest()
+durbinWatsonTest()
+vif()
+outlierTest()
+influencePlot()
+
+confusionMatrix()
+roc()
+auc()
+```
+
+# Orden rápido para una pregunta de modelos
+
+```text
+1. Construir el modelo.
+2. Si lo pide, seleccionar predictores.
+3. Revisar ajuste.
+4. Revisar condiciones y casos influyentes.
+5. Evaluar predicción con datos no usados en el ajuste.
+6. Escribir 1 a 3 frases.
+```
+
+# RELACIONADO
+
+- Ejercicios completos -> `06_PREGUNTAS_TIPO_PEP.Rmd`
+- Frases listas -> `07_INTERPRETACIONES_RAPIDAS.Rmd`
+

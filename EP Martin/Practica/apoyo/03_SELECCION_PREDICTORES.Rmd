@@ -1,0 +1,338 @@
+---
+title: "Selección de predictores"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE, warning = FALSE)
+```
+
+# ¿CUÁNDO USAR ESTE ARCHIVO?
+
+Si el enunciado pide selección escalonada, búsqueda exhaustiva, RFE o elegir predictores por R²/ROC.
+
+| Si dice | Usar |
+|---|---|
+| selección escalonada | `step()` |
+| búsqueda exhaustiva | `regsubsets()` |
+| RFE + Y numérica | `lmFuncs` |
+| RFE + Y binaria | `lrFuncs` |
+| seleccionar por ROC | `twoClassSummary` |
+
+# Datos
+
+```{r datos}
+datos <- read.csv("DatosPEP.csv")
+
+set.seed(21336)
+muestra <- datos[sample(nrow(datos), 300), ]
+```
+
+# `step()`
+
+## Cuándo usar
+
+Cuando diga selección escalonada o paso a paso. Por defecto selecciona según AIC.
+
+```{r step}
+modelo_nulo <- lm(hab_ciud ~ 1, data = muestra)
+
+modelo_completo <- lm(
+  hab_ciud ~ hab_dig + hab_num + hab_verb + egreso + sexo + tipo_edu,
+  data = muestra
+)
+
+modelo_step <- step(
+  modelo_nulo,
+  scope = list(upper = modelo_completo)
+)
+
+summary(modelo_step)
+AIC(modelo_step)
+```
+
+> `step()` conserva el modelo con menor AIC dentro del recorrido realizado. Un predictor puede quedar aunque su p-valor sea mayor que 0,05 si quitarlo empeora el AIC.
+
+# `leaps::regsubsets()`
+
+## Cuándo usar
+
+Cuando aparezca **“búsqueda exhaustiva”**, `leaps`, R² ajustado o BIC para varios tamaños.
+
+```{r leaps}
+library(leaps)
+
+predictoras <- c(
+  "hab_dig", "hab_num", "hab_verb",
+  "egreso", "sexo", "tipo_edu"
+)
+
+formula_completa <- as.formula(
+  paste("hab_ciud ~", paste(predictoras, collapse = " + "))
+)
+
+busqueda <- regsubsets(
+  formula_completa,
+  data = muestra,
+  nbest = 1,
+  nvmax = 6,
+  method = "exhaustive"
+)
+
+resumen <- summary(busqueda)
+candidatos <- 2:6
+
+tabla <- data.frame(
+  n_predictores = candidatos,
+  adjr2 = resumen$adjr2[candidatos],
+  BIC = resumen$bic[candidatos]
+)
+
+tabla
+```
+
+## Elegir y construir la fórmula final
+
+```{r leaps-final}
+mejor_n <- tabla$n_predictores[which.min(tabla$BIC)]
+
+predictores_finales <- names(
+  coef(busqueda, id = mejor_n)
+)[-1]
+
+predictores_finales
+
+formula_final <- reformulate(
+  predictores_finales,
+  response = "hab_ciud"
+)
+
+modelo_final <- lm(formula_final, data = muestra)
+summary(modelo_final)
+```
+
+- Mayor `adjr2`: mejor según R² ajustado.
+- Menor BIC: mejor según BIC.
+- Si discrepan, usa el criterio pedido en el enunciado.
+
+# RFE lineal
+
+Patrón de EP11: `lmFuncs`, repeated CV y selección por `Rsquared`.
+
+```{r rfe-lineal}
+library(caret)
+
+predictoras <- c(
+  "hab_ciud", "hab_num", "hab_verb",
+  "egreso", "sexo", "tipo_edu"
+)
+
+x <- muestra[, predictoras]
+y <- muestra[["hab_dig"]]
+
+set.seed(21336)
+
+control_rfe <- rfeControl(
+  functions = lmFuncs,
+  method = "repeatedcv",
+  number = 5,
+  repeats = 5
+)
+
+rfe_lineal <- rfe(
+  x = x,
+  y = y,
+  sizes = 2:6,
+  rfeControl = control_rfe,
+  metric = "Rsquared"
+)
+
+rfe_lineal$optsize
+predictors(rfe_lineal)
+rfe_lineal$results
+```
+
+> Para poder predictivo, mira el R² en `$results`, no solo el R² del ajuste final con todos los datos.
+
+# RFE logística
+
+Patrón de EP11: `lrFuncs`, `twoClassSummary`, ROC y repeated CV.
+
+```{r rfe-logistica}
+predictoras <- c(
+  "sexo", "tipo_edu", "egreso",
+  "hab_dig", "hab_ciud", "hab_num", "hab_verb"
+)
+
+x <- muestra[, predictoras]
+
+y <- factor(
+  ifelse(muestra$empleo_fl == 1, "Empleo", "No_empleo"),
+  levels = c("Empleo", "No_empleo")
+)
+
+funciones_log <- lrFuncs
+funciones_log$summary <- twoClassSummary
+
+funciones_log$selectSize <- function(x, metric, maximize) {
+  x <- x[x$Variables %in% 2:6, , drop = FALSE]
+  pickSizeBest(x, metric, maximize)
+}
+
+set.seed(21336)
+
+control_rfe_log <- rfeControl(
+  functions = funciones_log,
+  method = "repeatedcv",
+  number = 5,
+  repeats = 5,
+  returnResamp = "final"
+)
+
+rfe_log <- rfe(
+  x = x,
+  y = y,
+  sizes = 2:6,
+  rfeControl = control_rfe_log,
+  metric = "ROC"
+)
+
+rfe_log$optsize
+predictors(rfe_log)
+rfe_log$results
+```
+
+# LOOCV + ROC
+
+Patrón específico de EP11. En LOOCV cada fold tiene una observación, por lo que se reúnen todas las probabilidades dejadas fuera y se calcula una ROC global.
+
+## 1. RFE con LOOCV para generar subconjuntos
+
+```{r rfe-loocv}
+library(caret)
+library(pROC)
+
+set.seed(21336)
+
+control_rfe_loocv <- rfeControl(
+  functions = lrFuncs,
+  method = "LOOCV",
+  returnResamp = "all"
+)
+
+rfe_loocv <- rfe(
+  x = x,
+  y = y,
+  sizes = 2:6,
+  rfeControl = control_rfe_loocv,
+  metric = "Accuracy"
+)
+```
+
+## 2. Predictores candidatos por tamaño
+
+```{r variables-loocv}
+variables_por_tamano <- lapply(2:6, function(k) {
+  importancia_k <- rfe_loocv$variables[
+    rfe_loocv$variables$Variables == k,
+  ]
+
+  promedio_k <- aggregate(
+    Overall ~ var,
+    data = importancia_k,
+    FUN = mean
+  )
+
+  promedio_k <- promedio_k[
+    order(promedio_k$Overall, decreasing = TRUE),
+  ]
+
+  head(promedio_k$var, k)
+})
+
+names(variables_por_tamano) <- 2:6
+variables_por_tamano
+```
+
+## 3. LOOCV explícito y ROC global
+
+```{r evaluar-loocv}
+resultados <- data.frame(
+  Variables = 2:6,
+  ROC = NA,
+  Sens = NA,
+  Spec = NA
+)
+
+for (k in 2:6) {
+  predictores_k <- variables_por_tamano[[as.character(k)]]
+  probabilidades <- numeric(nrow(muestra))
+
+  for (i in 1:nrow(muestra)) {
+    entrenamiento <- muestra[-i, ]
+    prueba <- muestra[i, , drop = FALSE]
+
+    formula_k <- as.formula(
+      paste(
+        "empleo_fl ~",
+        paste(predictores_k, collapse = " + ")
+      )
+    )
+
+    modelo_k <- glm(
+      formula_k,
+      data = entrenamiento,
+      family = binomial
+    )
+
+    probabilidades[i] <- predict(
+      modelo_k,
+      newdata = prueba,
+      type = "response"
+    )
+  }
+
+  curva_k <- roc(
+    response = muestra$empleo_fl,
+    predictor = probabilidades,
+    levels = c(0, 1),
+    direction = "<",
+    quiet = TRUE
+  )
+
+  corte_k <- coords(
+    curva_k,
+    x = "best",
+    ret = c("sensitivity", "specificity"),
+    transpose = FALSE
+  )
+
+  resultados$ROC[resultados$Variables == k] <-
+    as.numeric(auc(curva_k))
+
+  resultados$Sens[resultados$Variables == k] <-
+    as.numeric(corte_k$sensitivity)
+
+  resultados$Spec[resultados$Variables == k] <-
+    as.numeric(corte_k$specificity)
+}
+
+resultados
+```
+
+```{r elegir-loocv}
+mejor_n <- resultados$Variables[which.max(resultados$ROC)]
+
+mejor_n
+variables_por_tamano[[as.character(mejor_n)]]
+resultados[resultados$Variables == mejor_n, ]
+```
+
+> Para poder predictivo se usa la ROC global formada con probabilidades de observaciones que quedaron fuera del ajuste correspondiente.
+
+# RELACIONADO
+
+- Construcción e interpretación lineal -> `02_REGRESION_LINEAL.Rmd`
+- Construcción logística -> `04_REGRESION_LOGISTICA.Rmd`
+- Diagnóstico después de seleccionar -> `05_DIAGNOSTICO_VALIDACION.Rmd`
+
