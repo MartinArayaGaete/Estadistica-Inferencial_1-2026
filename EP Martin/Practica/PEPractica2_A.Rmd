@@ -2,10 +2,22 @@
 title: "PEPractica 2"
 author: "Grupo 8"
 date: "2026-08-19"
-output: html_document
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
 ---
 
-## Pregunta 1. Bootstrap para dos muestras independientes
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+# Pregunta 1. Bootstrap para dos muestras independientes
 
 Utilice el archivo DatosPEP.csv.
 
@@ -34,12 +46,1604 @@ library(dplyr)
 
 datos_valpo = filter(datos, region == 'Valparaiso') 
 
-datos_edu_0 = slice_sample(datos_sobrepeso, n = 60)
-datos_edu_1 = slice_sample(datos_no_sobrepeso, n = 60)
+datos_edu_0 = filter(datos_valpo, tipo_edu == 0)
+datos_edu_1 = filter(datos_valpo, tipo_edu == 1)
 
 
-datos_entrenamiento = rbind(datos_sobrepeso_muestra[1:50, ],  datos_no_sobrepeso_muestra[1:50, ])
+datos_edu_0 = slice_sample(datos_edu_0, n = 60)
+datos_edu_1 = slice_sample(datos_edu_1, n = 60)
 
-datos_prueba = rbind(datos_sobrepeso_muestra[51:75, ], datos_no_sobrepeso_muestra[51:75, ])
+
+datos_muestra = rbind(datos_edu_0,  datos_edu_1)
+datos_muestra = datos_muestra[sample(nrow(datos_muestra)), ]
 ```
 
+Con un nivel de significancia alfa = 0.05, las hipótesis son:
+
+H0: la media poblacional de hab_num para tipo_edu 0 es igual a la de tipo_edu 1;
+
+H_A: la media poblacional de hab_num para tipo_edu 0 es distinta de la de tipo_edu 1.
+
+Es una prueba bilateral. Se rechazará H0 si el valor p es menor que 0.05.
+
+```{r}
+library(rsample)
+library(purrr)
+library(tidyr)
+
+# Cantidad de remuestras y nivel de significancia
+R <- 1999
+alfa <- 0.05
+
+# Asegurar que tipo_edu sea tratado como grupo
+datos_muestra$tipo_edu <- factor(datos_muestra$tipo_edu)
+
+# Crear las remuestras bootstrap manteniendo separados ambos grupos
+set.seed(1319)
+
+remuestras <- bootstraps(datos_muestra, times = R, strata = tipo_edu, apparent = TRUE)
+
+# Función que calcula:
+# media(tipo_edu = 0) - media(tipo_edu = 1)
+dif_dos_medias <- function(remuestra, ...) {
+
+  analysis(remuestra) |>
+    group_by(tipo_edu) |>
+    summarise(
+      n = n(),
+      m = mean(hab_num),
+      v = var(hab_num),
+      .groups = "drop"
+    ) |>
+    summarise(
+      term = "Diferencia de medias",
+      estimate = m[1] - m[2],
+      std.error = sqrt(sum(v / n))
+    )
+}
+
+# Construir distribución bootstrap
+dist_bt <- remuestras |> mutate(stats = map(splits, dif_dos_medias))
+
+# Intervalos de confianza del 95%
+ic_t <- dist_bt |>
+  int_t(
+    statistics = stats,
+    alpha = alfa
+  )
+
+ic_percentil <- dist_bt |>
+  int_pctl(
+    statistics = stats,
+    alpha = alfa
+  )
+
+ic_bca <- dist_bt |>
+  int_bca(
+    statistics = stats,
+    alpha = alfa,
+    .fn = dif_dos_medias
+  )
+
+# Mostrar los tres intervalos
+intervalos <- bind_rows(
+  ic_t,
+  ic_percentil,
+  ic_bca
+)
+
+print(intervalos)
+```
+Con un nivel de significancia α=0.05, los intervalos de confianza bootstrap obtenidos para la diferencia de medias entre ambos tipos de educación no contienen el valor 0. Por lo tanto, se rechaza H0.
+
+ y se concluye que existe evidencia estadísticamente significativa de una diferencia en la media poblacional de hab_num entre los individuos con tipo_edu = 0 y aquellos con tipo_edu = 1.
+
+La diferencia observada entre las medias es de aproximadamente 183 unidades. Como la diferencia fue calculada como x0−x1.
+
+ y es positiva, la muestra indica que el grupo con tipo_edu = 0 presenta, en promedio, un valor de hab_num mayor que el grupo con tipo_edu = 1.
+
+
+
+
+Los tres métodos producen intervalos de confianza muy similares. El intervalo Student-t es aproximadamente [109,261], el intervalo percentil [109,259] y el intervalo BCa [113,261].
+
+Las diferencias entre los límites de los intervalos son pequeñas y, más importante aún, ninguno de los tres contiene el valor 0. Por consiguiente, los tres métodos conducen a la misma decisión estadística: rechazar H0.
+
+En consecuencia, la conclusión es estable frente al método utilizado para construir el intervalo de confianza, ya que en todos los casos existe evidencia de una diferencia entre las medias poblacionales de hab_num para ambos tipos de educación.
+
+
+
+
+\newpage
+
+# Pregunta 2. RFE + regresión logística
+
+Utilice nuevamente DatosPEP.csv.
+
+1. Fije la semilla en 27182.
+
+2. Seleccione aleatoriamente una muestra de 200 personas.
+
+3. Considere empleo_fl como variable respuesta y conviértala en un factor apropiado para construir un modelo de regresión logística.
+
+4. Considere como posibles predictores todas las demás variables disponibles.
+
+5. Utilizando Recursive Feature Elimination (RFE), encuentre el mejor conjunto de entre cuatro y cinco predictores para predecir empleo_fl.
+
+6. Para evaluar cada conjunto utilice validación cruzada repetida de 10 pliegues, con una repetición.
+
+7. Utilice el área bajo la curva ROC como criterio para seleccionar el mejor conjunto.
+  Informe:
+  - cantidad óptima de predictores;
+  - predictores seleccionados;
+  - ROC;
+  - sensibilidad;
+  - especificidad.
+
+9. Ajuste el modelo logístico final con los predictores seleccionados e interprete los predictores que resulten relevantes.
+
+10. Evalúe su ajuste mediante la comparación con el modelo nulo, deviance y AIC.
+
+11. Revise si el algoritmo convergió y si existen problemas importantes de multicolinealidad o casos influyentes.
+
+12. Finalmente, pronúnciese separadamente sobre:
+ - confiabilidad del modelo;
+ - poder predictivo del modelo.
+
+## Qué hay que reconocer
+
+La respuesta es binaria y se pide seleccionar predictores mediante RFE. Como el criterio es ROC, se usa el patrón de EP11 con `lrFuncs`, `twoClassSummary` y validación cruzada repetida. `twoClassSummary` toma el primer nivel del factor como evento de interés, por eso se deja `Empleo` primero.
+
+## Muestra y respuesta
+
+```{r p2-datos}
+library(dplyr)
+library(caret)
+library(pROC)
+library(car)
+
+datos <- read.csv("DatosPEP.csv", stringsAsFactors = TRUE)
+
+set.seed(27182)
+muestra_2 <- slice_sample(datos, n = 200)
+
+muestra_2$empleo <- factor(
+  ifelse(muestra_2$empleo_fl == 1, "Empleo", "No_empleo"),
+  levels = c("Empleo", "No_empleo")
+)
+
+nrow(muestra_2)
+table(muestra_2$empleo)
+```
+
+## RFE con ROC
+
+`region` es categórica. La interfaz con fórmula de `rfe()` crea las variables indicadoras necesarias, de la misma forma en que los modelos del capítulo 14 trabajan con predictores categóricos.
+
+```{r p2-rfe, warning=FALSE}
+funciones_2 <- lrFuncs
+funciones_2$summary <- twoClassSummary
+
+funciones_2$selectSize <- function(x, metric, maximize) {
+  x <- x[x$Variables %in% 4:5, , drop = FALSE]
+  pickSizeBest(x, metric, maximize)
+}
+
+control_2 <- rfeControl(
+  functions = funciones_2,
+  method = "repeatedcv",
+  number = 10,
+  repeats = 1,
+  returnResamp = "final"
+)
+
+set.seed(27182)
+
+rfe_2 <- rfe(
+  empleo ~ . - empleo_fl,
+  data = muestra_2,
+  sizes = 4:5,
+  rfeControl = control_2,
+  metric = "ROC"
+)
+
+rfe_2$optsize
+predictors(rfe_2)
+rfe_2$results
+```
+
+La fila correspondiente a `$optsize` entrega el ROC, la sensibilidad y la especificidad obtenidos durante la validación cruzada. Esas son las cifras que se informan como poder predictivo.
+
+Con esta semilla se seleccionan 4 indicadores: `hab_num`, `egreso`, `tipo_edu` y `regionNuble`. El remuestreo entrega ROC = 0,7557, sensibilidad = 0,6211 y especificidad = 0,7318. Como algunas regiones tienen pocos casos, pueden aparecer advertencias de importancia faltante cuando una indicadora queda constante dentro de un fold; esto no detiene el ajuste, pero debe mencionarse como limitación.
+
+## Modelo final e interpretación de predictores
+
+```{r p2-modelo}
+modelo_2 <- rfe_2$fit
+summary(modelo_2)
+exp(coef(modelo_2))
+```
+
+Para redactar:
+
+- p < 0,05: “Existe evidencia de que el predictor aporta al modelo, manteniendo constantes los demás”.
+- coeficiente positivo: aumentan los log-odds de `Empleo`.
+- coeficiente negativo: disminuyen los log-odds de `Empleo`.
+- `exp(coeficiente)` mayor que 1: aumentan las odds; menor que 1: disminuyen.
+
+No se interpreta el intercepto en términos prácticos si representa valores de predictores que no tienen sentido en el contexto.
+
+## Ajuste: modelo nulo, deviance y AIC
+
+```{r p2-ajuste}
+datos_modelo_2 <- modelo_2$model
+
+modelo_nulo_2 <- glm(
+  Class ~ 1,
+  data = datos_modelo_2,
+  family = binomial
+)
+
+anova(modelo_nulo_2, modelo_2, test = "LRT")
+AIC(modelo_nulo_2, modelo_2)
+summary(modelo_2)
+```
+
+Cómo redactar:
+
+> Si el LRT entrega p < 0,05, el modelo seleccionado mejora significativamente el ajuste respecto del modelo nulo. Una deviance residual menor que la nula indica que los predictores reducen la falta de ajuste. Entre modelos comparables, se prefiere el menor AIC.
+
+## Convergencia, VIF e influencia
+
+```{r p2-diagnostico}
+modelo_2$converged
+vif(modelo_2)
+influencePlot(modelo_2)
+```
+
+Cómo redactar según el output:
+
+- `TRUE` en `$converged`: “El algoritmo convergió correctamente”.
+- VIF bajo 5: “No se observa un problema importante de multicolinealidad”.
+- VIF entre 5 y 10: multicolinealidad preocupante.
+- VIF mayor que 10: multicolinealidad severa.
+- Los casos etiquetados por `influencePlot()` se revisan, pero no se eliminan automáticamente.
+
+## Conclusiones separadas
+
+**Confiabilidad:** se fundamenta con convergencia, LRT, deviance, AIC, VIF y observaciones influyentes.
+
+**Poder predictivo:** se fundamenta con ROC, sensibilidad y especificidad de `rfe_2$results`, porque fueron obtenidos mediante validación cruzada y no al volver a evaluar el ajuste final sobre las mismas 200 personas.
+
+> Redacción lista: “El modelo presenta [buen/problemas de] ajuste y [no presenta/presenta] señales importantes de multicolinealidad o influencia. En validación cruzada obtuvo ROC = ..., sensibilidad = ... y especificidad = ..., por lo que su capacidad para discriminar ambas clases es ...”.
+
+**Resultado con esta semilla:** el LRT es significativo (p < 0,001), el AIC baja de 277,98 a 230,08, el algoritmo converge y todos los VIF son cercanos a 1. Entre los predictores, `hab_num` resulta significativo y tiene coeficiente negativo. El ajuste y la multicolinealidad son favorables, pero el desempeño predictivo es moderado y las advertencias asociadas a regiones escasas obligan a interpretar la selección con cautela.
+
+\newpage
+
+# Pregunta 3. Prueba de permutaciones Monte Carlo
+
+## Qué hay que reconocer
+
+Se comparan dos proporciones. La permutación representa la distribución nula al mezclar `empleo_fl` entre los grupos. El intervalo de confianza no se obtiene de esa distribución nula: siguiendo EP08, se usa un bootstrap separado que remuestrea con reposición dentro de cada grupo.
+
+## Hipótesis
+
+Sea (p_0) la proporción de empleo formal para `sexo = 0` y (p_1) la proporción para `sexo = 1`.
+
+\[
+H_0:p_0-p_1=0
+\]
+
+\[
+H_A:p_0-p_1\neq0
+\]
+
+## Selección de la muestra
+
+```{r p3-datos}
+set.seed(24680)
+
+metro_3 <- filter(datos, region == "Metropolitana")
+
+sexo_0_3 <- metro_3 |>
+  filter(sexo == 0) |>
+  slice_sample(n = 70)
+
+sexo_1_3 <- metro_3 |>
+  filter(sexo == 1) |>
+  slice_sample(n = 70)
+
+muestra_3 <- rbind(sexo_0_3, sexo_1_3)
+
+prop_obs_3 <- tapply(
+  muestra_3$empleo_fl,
+  muestra_3$sexo,
+  mean
+)
+
+dif_obs_3 <- prop_obs_3["0"] - prop_obs_3["1"]
+
+prop_obs_3
+dif_obs_3
+```
+
+El signo se interpreta como `sexo 0 - sexo 1`: positivo significa mayor frecuencia de empleo en `sexo = 0`; negativo significa mayor frecuencia en `sexo = 1`.
+
+## Permutaciones y valor p
+
+```{r p3-permutaciones}
+B_3 <- 4999
+dif_perm_3 <- numeric(B_3)
+
+set.seed(24680)
+
+for (i in 1:B_3) {
+  empleo_permutado <- sample(muestra_3$empleo_fl)
+
+  p_0 <- mean(empleo_permutado[muestra_3$sexo == 0])
+  p_1 <- mean(empleo_permutado[muestra_3$sexo == 1])
+
+  dif_perm_3[i] <- p_0 - p_1
+}
+
+p_valor_3 <- (
+  sum(abs(dif_perm_3) >= abs(dif_obs_3)) + 1
+) / (B_3 + 1)
+
+p_valor_3
+```
+
+## IC bootstrap para la diferencia de proporciones
+
+```{r p3-bootstrap}
+dif_boot_3 <- numeric(B_3)
+
+set.seed(24680)
+
+for (i in 1:B_3) {
+  empleo_0 <- sample(
+    sexo_0_3$empleo_fl,
+    replace = TRUE
+  )
+
+  empleo_1 <- sample(
+    sexo_1_3$empleo_fl,
+    replace = TRUE
+  )
+
+  dif_boot_3[i] <- mean(empleo_0) - mean(empleo_1)
+}
+
+ic_3 <- quantile(dif_boot_3, c(0.025, 0.975))
+ic_3
+```
+
+Cómo redactar:
+
+- p < 0,05 y el IC no contiene 0: existe evidencia de diferencia entre las proporciones.
+- p > 0,05 y el IC contiene 0: no hay evidencia suficiente de diferencia.
+- La conclusión debe nombrar la Región Metropolitana, `sexo` y empleo formal.
+
+**Resultado con esta semilla:** las proporciones observadas son 0,5000 para `sexo = 0` y 0,4286 para `sexo = 1`, con diferencia 0,0714. La prueba de permutaciones entrega p = 0,487 y el IC bootstrap es [-0,0857; 0,2429]. Como p > 0,05 y el intervalo contiene 0, no hay evidencia suficiente de que la frecuencia de empleo formal difiera entre ambos grupos en la Región Metropolitana.
+
+\newpage
+
+# Pregunta 4. Bootstrap para más de dos grupos y post-hoc
+
+## Qué hay que reconocer
+
+Hay cuatro muestras independientes y una respuesta numérica. Se usa una prueba ómnibus con el estadístico F. Si la prueba global detecta una diferencia, el post-hoc indica dónde ocurre; aquí se ejecuta aunque la prueba global no sea significativa porque así lo pide el enunciado.
+
+## Hipótesis ómnibus
+
+\[
+H_0:\mu_{Metropolitana}=\mu_{Valparaiso}=\mu_{Biobio}=\mu_{Maule}
+\]
+
+\[
+H_A:\text{al menos una media es diferente}
+\]
+
+## Muestra
+
+```{r p4-datos}
+regiones_4 <- c(
+  "Metropolitana", "Valparaiso", "Biobio", "Maule"
+)
+
+set.seed(54321)
+
+muestra_4 <- datos |>
+  filter(region %in% regiones_4) |>
+  group_by(region) |>
+  slice_sample(n = 60) |>
+  ungroup()
+
+muestra_4$region <- factor(
+  muestra_4$region,
+  levels = regiones_4
+)
+
+table(muestra_4$region)
+
+tapply(
+  muestra_4$hab_dig,
+  muestra_4$region,
+  mean
+)
+```
+
+## Prueba ómnibus y remuestras para el post-hoc
+
+Este bloque adapta el procedimiento de EP08. Los datos se centran bajo (H_0), se remuestrea con reposición dentro de cada región y las diferencias por pares se guardan en las mismas 1999 remuestras.
+
+```{r p4-bootstrap}
+estadistico_F_4 <- function(y, grupo) {
+  summary(aov(y ~ grupo))[[1]][1, "F value"]
+}
+
+pares_4 <- combn(levels(muestra_4$region), 2)
+
+diferencias_4 <- function(y, grupo) {
+  apply(
+    pares_4,
+    2,
+    function(par) {
+      mean(y[grupo == par[1]]) -
+        mean(y[grupo == par[2]])
+    }
+  )
+}
+
+y_4 <- muestra_4$hab_dig
+grupo_4 <- muestra_4$region
+
+F_obs_4 <- estadistico_F_4(y_4, grupo_4)
+dif_obs_4 <- diferencias_4(y_4, grupo_4)
+
+media_total_4 <- mean(y_4)
+
+datos_H0_4 <- lapply(
+  levels(grupo_4),
+  function(nivel) {
+    x <- y_4[grupo_4 == nivel]
+    x - mean(x) + media_total_4
+  }
+)
+
+names(datos_H0_4) <- levels(grupo_4)
+tamanos_4 <- table(grupo_4)
+
+B_4 <- 1999
+F_boot_4 <- numeric(B_4)
+dif_boot_4 <- matrix(
+  NA_real_,
+  nrow = B_4,
+  ncol = ncol(pares_4)
+)
+
+set.seed(54321)
+
+for (b in 1:B_4) {
+  remuestras_4 <- lapply(
+    levels(grupo_4),
+    function(nivel) {
+      sample(
+        datos_H0_4[[nivel]],
+        size = tamanos_4[[nivel]],
+        replace = TRUE
+      )
+    }
+  )
+
+  y_boot_4 <- unlist(remuestras_4, use.names = FALSE)
+
+  grupo_boot_4 <- factor(
+    rep(
+      levels(grupo_4),
+      times = as.integer(tamanos_4)
+    ),
+    levels = levels(grupo_4)
+  )
+
+  F_boot_4[b] <- estadistico_F_4(y_boot_4, grupo_boot_4)
+  dif_boot_4[b, ] <- diferencias_4(y_boot_4, grupo_boot_4)
+}
+
+p_global_4 <- (
+  sum(F_boot_4 >= F_obs_4) + 1
+) / (B_4 + 1)
+
+F_obs_4
+p_global_4
+```
+
+## Comparaciones post-hoc con ajuste de Holm
+
+```{r p4-posthoc}
+p_sin_ajustar_4 <- sapply(
+  1:ncol(pares_4),
+  function(j) {
+    (
+      sum(
+        abs(dif_boot_4[, j]) >= abs(dif_obs_4[j])
+      ) + 1
+    ) / (B_4 + 1)
+  }
+)
+
+p_ajustados_4 <- p.adjust(
+  p_sin_ajustar_4,
+  method = "holm"
+)
+
+resultados_4 <- data.frame(
+  Grupo_1 = pares_4[1, ],
+  Grupo_2 = pares_4[2, ],
+  Diferencia = dif_obs_4,
+  p_sin_ajustar = p_sin_ajustar_4,
+  p_ajustado_Holm = p_ajustados_4
+)
+
+resultados_4
+```
+
+Cómo redactar:
+
+> Si `p_global_4 < 0,05`, existe evidencia de que al menos una región tiene un promedio distinto de `hab_dig`. En el post-hoc se consideran significativos los pares con p ajustado por Holm menor que 0,05. Una diferencia Grupo 1 - Grupo 2 positiva indica mayor promedio en Grupo 1; una diferencia negativa indica mayor promedio en Grupo 2.
+
+**Resultado con esta semilla:** se obtiene F = 0,7137 y p bootstrap = 0,5345. No se rechaza la igualdad de medias. Además, ningún par resulta significativo después del ajuste de Holm, por lo que no se identifica evidencia de diferencias entre las cuatro regiones.
+
+\newpage
+
+# Pregunta 5. Datos problemáticos y prueba robusta de Yuen
+
+## Qué hay que reconocer
+
+Son dos grupos independientes y el enunciado pide una comparación robusta. La prueba de Yuen compara medias truncadas y aparece expresamente en el capítulo 12.
+
+## Muestra y gráficos
+
+Como el enunciado no entrega una semilla, se usa `13579` únicamente para que la muestra pueda reproducirse. Si la prueba entrega otra semilla, se reemplaza ese valor.
+
+```{r p5-datos}
+library(ggplot2)
+library(WRS2)
+
+set.seed(13579)
+
+valpo_5 <- filter(datos, region == "Valparaiso")
+
+edu_0_5 <- valpo_5 |>
+  filter(tipo_edu == 0) |>
+  slice_sample(n = 80)
+
+edu_1_5 <- valpo_5 |>
+  filter(tipo_edu == 1) |>
+  slice_sample(n = 80)
+
+muestra_5 <- rbind(edu_0_5, edu_1_5)
+muestra_5$tipo_edu <- factor(muestra_5$tipo_edu)
+
+ggplot(muestra_5, aes(x = tipo_edu, y = hab_ciud)) +
+  geom_boxplot() +
+  labs(
+    x = "Tipo de educación",
+    y = "Habilidad ciudadana"
+  )
+
+ggplot(muestra_5, aes(sample = hab_ciud)) +
+  stat_qq() +
+  stat_qq_line() +
+  facet_wrap(~ tipo_edu)
+```
+
+En los boxplots se buscan puntos extremos, asimetría y diferencias grandes de dispersión. En los Q-Q plots se revisan desviaciones claras respecto de la línea. Si estos problemas son importantes, una t clásica basada en medias aritméticas resulta menos defendible.
+
+## Hipótesis y prueba
+
+Sean μ<sub>t0</sub> y μ<sub>t1</sub> las medias truncadas al 20%.
+
+\[
+H_0:\mu_{t0}=\mu_{t1}
+\]
+
+\[
+H_A:\mu_{t0}\neq\mu_{t1}
+\]
+
+```{r p5-yuen}
+prueba_5 <- yuen(
+  hab_ciud ~ tipo_edu,
+  data = muestra_5,
+  tr = 0.2
+)
+
+prueba_5
+```
+
+El output entrega el estadístico, grados de libertad, p-valor, diferencia de medias truncadas e intervalo de confianza.
+
+Cómo redactar:
+
+- p < 0,05: existe evidencia de diferencia entre las medias truncadas.
+- p > 0,05: no hay evidencia suficiente de diferencia.
+- Una diferencia positiva significa que la media truncada del primer nivel es mayor.
+- Al podar 20%, se descarta el 20% inferior y el 20% superior para calcular la media truncada; por eso disminuye la influencia de valores extremos.
+- Limitación: si los valores extremos son parte importante de la pregunta, la poda elimina precisamente información relevante y la conclusión ya no describe la media aritmética completa.
+
+**Resultado con esta semilla:** la diferencia estimada entre medias truncadas es 36,0625, con IC del 95% [-30,6084; 102,7334]. La prueba entrega T = 1,0741 y p = 0,2856. Como el intervalo contiene 0 y p > 0,05, no hay evidencia suficiente de diferencia entre las medias truncadas de `hab_ciud` para los dos niveles de `tipo_edu`.
+
+\newpage
+
+# Pregunta 6. Regresión lineal simple completa
+
+## Qué hay que reconocer
+
+La respuesta `hab_ciud` es numérica y existe un solo predictor, `hab_dig`. El ajuste se evalúa con los 100 casos de construcción; el poder predictivo, con los 50 casos reservados.
+
+## Muestra, modelo y ecuación
+
+```{r p6-modelo}
+library(car)
+
+set.seed(10203)
+muestra_6 <- datos[sample(nrow(datos), 150), ]
+
+entrenamiento_6 <- muestra_6[1:100, ]
+prueba_6 <- muestra_6[101:150, ]
+
+modelo_6 <- lm(
+  hab_ciud ~ hab_dig,
+  data = entrenamiento_6
+)
+
+summary(modelo_6)
+coef(modelo_6)
+```
+
+La ecuación estimada se escribe:
+
+\[
+\widehat{hab\_ciud}=b_0+b_1\,hab\_dig
+\]
+
+Reemplaza (b_0) y (b_1) por los valores de `coef(modelo_6)`.
+
+Cómo interpretar:
+
+- Intercepto: valor esperado de `hab_ciud` cuando `hab_dig = 0`.
+- Pendiente: cambio promedio esperado en `hab_ciud` por una unidad adicional de `hab_dig`.
+- p del predictor menor que 0,05: existe evidencia de asociación lineal.
+- `Multiple R-squared`: porcentaje de variabilidad de `hab_ciud` explicado por `hab_dig`.
+- p de la prueba F menor que 0,05: el modelo con predictor mejora respecto de uno sin predictor.
+
+## Condiciones, casos atípicos e influencia
+
+```{r p6-diagnostico}
+residualPlots(modelo_6)
+marginalModelPlots(modelo_6, sd = TRUE)
+ncvTest(modelo_6)
+
+set.seed(10203)
+durbinWatsonTest(modelo_6)
+
+outlierTest(modelo_6)
+influencePlot(modelo_6)
+```
+
+Para redactar:
+
+- Curvatura p > 0,05 y ausencia de patrones graves: no hay evidencia suficiente para cuestionar la linealidad.
+- Los residuos deben formar aproximadamente una banda aleatoria alrededor de cero, sin puntos que se alejen demasiado; esto apoya normalidad aproximada y buen comportamiento.
+- `ncvTest()` p > 0,05: no hay evidencia de varianza no constante.
+- Durbin-Watson p > 0,05: no hay evidencia de autocorrelación.
+- `outlierTest()` identifica residuos atípicos; `influencePlot()` señala casos a revisar. No se eliminan automáticamente.
+
+## Predicción en 50 casos
+
+```{r p6-prediccion}
+pred_6 <- predict(modelo_6, newdata = prueba_6)
+error_6 <- prueba_6$hab_ciud - pred_6
+
+RMSE_6 <- sqrt(mean(error_6^2))
+MAE_6 <- mean(abs(error_6))
+
+RMSE_6
+MAE_6
+```
+
+## Conclusión en tres partes
+
+**Ajuste:** usar p del predictor, prueba F y R².
+
+**Confiabilidad:** usar linealidad, comportamiento de residuos, `ncvTest()`, Durbin-Watson y casos influyentes.
+
+**Poder predictivo:** usar RMSE y MAE de los 50 casos no usados en el ajuste.
+
+> “El RMSE de prueba es ..., por lo que las predicciones se desvían aproximadamente ... unidades de `hab_ciud`. El MAE indica un error absoluto promedio de ... unidades”.
+
+**Resultado con esta semilla:** la ecuación es aproximadamente `hab_ciud = -38,0735 + 1,0838*hab_dig`; el predictor es significativo y R² = 0,9667. No se detecta curvatura ni autocorrelación, pero `ncvTest()` resulta significativo (p = 0,0066) y aparecen dos residuos atípicos con Bonferroni. Por eso el ajuste es alto, pero la confiabilidad debe tomarse con cautela. En prueba, RMSE = 25,8390 y MAE = 17,2508.
+
+\newpage
+
+# Pregunta 7. RLM y selección escalonada
+
+## Qué hay que reconocer
+
+Se construye primero el modelo completo y luego se usa `step()` para obtener un modelo más parsimonioso. La comparación de ajuste se separa de la comparación predictiva sobre los 50 casos reservados.
+
+## Muestra y selección
+
+```{r p7-seleccion}
+set.seed(77889)
+muestra_7 <- datos[sample(nrow(datos), 200), ]
+muestra_7 <- muestra_7[sample(nrow(muestra_7)), ]
+
+entrenamiento_7 <- muestra_7[1:150, ]
+prueba_7 <- muestra_7[151:200, ]
+
+modelo_completo_7 <- lm(
+  hab_ciud ~ hab_dig + hab_num + hab_verb +
+    egreso + sexo + tipo_edu,
+  data = entrenamiento_7
+)
+
+modelo_nulo_7 <- lm(
+  hab_ciud ~ 1,
+  data = entrenamiento_7
+)
+
+modelo_step_7 <- step(
+  modelo_nulo_7,
+  scope = list(upper = modelo_completo_7)
+)
+
+summary(modelo_completo_7)
+summary(modelo_step_7)
+```
+
+`step()` usa AIC por defecto. Un predictor puede permanecer aunque su p-valor individual sea mayor que 0,05 si retirarlo empeora el AIC.
+
+## R² ajustado, AIC y BIC
+
+```{r p7-comparacion}
+data.frame(
+  Modelo = c("Completo", "Escalonado"),
+  R2_ajustado = c(
+    summary(modelo_completo_7)$adj.r.squared,
+    summary(modelo_step_7)$adj.r.squared
+  ),
+  AIC = c(
+    AIC(modelo_completo_7),
+    AIC(modelo_step_7)
+  ),
+  BIC = c(
+    BIC(modelo_completo_7),
+    BIC(modelo_step_7)
+  )
+)
+```
+
+Para los coeficientes del modelo final:
+
+> “Por cada unidad adicional de X, se espera que `hab_ciud` cambie en promedio en el valor del coeficiente, manteniendo constantes los demás predictores”.
+
+## Diagnóstico del modelo seleccionado
+
+```{r p7-diagnostico}
+residualPlots(modelo_step_7)
+marginalModelPlots(modelo_step_7, sd = TRUE)
+ncvTest(modelo_step_7)
+
+set.seed(77889)
+durbinWatsonTest(modelo_step_7)
+
+vif(modelo_step_7)
+outlierTest(modelo_step_7)
+influencePlot(modelo_step_7)
+```
+
+## ¿La simplificación perjudicó la predicción?
+
+```{r p7-prediccion}
+pred_completo_7 <- predict(
+  modelo_completo_7,
+  newdata = prueba_7
+)
+
+pred_step_7 <- predict(
+  modelo_step_7,
+  newdata = prueba_7
+)
+
+data.frame(
+  Modelo = c("Completo", "Escalonado"),
+  RMSE = c(
+    sqrt(mean((prueba_7$hab_ciud - pred_completo_7)^2)),
+    sqrt(mean((prueba_7$hab_ciud - pred_step_7)^2))
+  ),
+  MAE = c(
+    mean(abs(prueba_7$hab_ciud - pred_completo_7)),
+    mean(abs(prueba_7$hab_ciud - pred_step_7))
+  )
+)
+```
+
+> Si el modelo escalonado mantiene RMSE y MAE parecidos o menores, la simplificación no perjudicó de forma importante su poder predictivo. Si ambos errores aumentan claramente, sí lo perjudicó.
+
+**Resultado con esta semilla:** `step()` selecciona `hab_dig`, `tipo_edu` y `hab_verb`. El modelo escalonado tiene R² ajustado = 0,9821, AIC = 1392,28 y BIC = 1407,34, cifras levemente mejores que las del completo. En prueba también obtiene RMSE = 31,5239 y MAE = 19,3347, apenas menores. La simplificación no perjudica el poder predictivo. Sin embargo, Tukey y `ncvTest()` resultan significativos, por lo que hay señales de no linealidad y heterocedasticidad que reducen su confiabilidad.
+
+\newpage
+
+# Pregunta 8. Búsqueda exhaustiva con `leaps` y bootstrap de predicción
+
+## Qué hay que reconocer
+
+Primero se seleccionan variables con búsqueda exhaustiva. Luego el modelo escogido se evalúa mediante bootstrap con `caret`. El R² ajustado del ajuste final y el R² de remuestreo responden preguntas distintas.
+
+## Muestra balanceada
+
+```{r p8-datos}
+library(leaps)
+
+set.seed(31415)
+
+empleo_0_8 <- datos |>
+  filter(empleo_fl == 0) |>
+  slice_sample(n = 50)
+
+empleo_1_8 <- datos |>
+  filter(empleo_fl == 1) |>
+  slice_sample(n = 50)
+
+muestra_8 <- rbind(empleo_0_8, empleo_1_8)
+muestra_8 <- muestra_8[sample(nrow(muestra_8)), ]
+
+table(muestra_8$empleo_fl)
+```
+
+## Búsqueda exhaustiva de 2 a 6 predictores
+
+```{r p8-leaps}
+predictoras_8 <- c(
+  "hab_dig", "hab_num", "hab_verb",
+  "egreso", "sexo", "tipo_edu"
+)
+
+formula_completa_8 <- as.formula(
+  paste(
+    "hab_ciud ~",
+    paste(predictoras_8, collapse = " + ")
+  )
+)
+
+busqueda_8 <- regsubsets(
+  formula_completa_8,
+  data = muestra_8,
+  nbest = 1,
+  nvmax = 6,
+  method = "exhaustive"
+)
+
+resumen_8 <- summary(busqueda_8)
+candidatos_8 <- 2:6
+
+tabla_8 <- data.frame(
+  Predictores = candidatos_8,
+  R2_ajustado = resumen_8$adjr2[candidatos_8],
+  BIC = resumen_8$bic[candidatos_8]
+)
+
+tabla_8
+```
+
+Se usa BIC para representar el equilibrio entre ajuste y parsimonia: menor BIC es mejor. Si el enunciado pidiera maximizar R² ajustado, se usaría ese criterio.
+
+```{r p8-final}
+mejor_n_8 <- tabla_8$Predictores[
+  which.min(tabla_8$BIC)
+]
+
+predictores_8 <- names(
+  coef(busqueda_8, id = mejor_n_8)
+)[-1]
+
+formula_8 <- reformulate(
+  predictores_8,
+  response = "hab_ciud"
+)
+
+modelo_8 <- lm(formula_8, data = muestra_8)
+
+predictores_8
+summary(modelo_8)
+```
+
+## Bootstrap con `caret`
+
+```{r p8-caret}
+set.seed(31415)
+
+control_8 <- trainControl(
+  method = "boot",
+  number = 1999
+)
+
+modelo_boot_8 <- train(
+  formula_8,
+  data = muestra_8,
+  method = "lm",
+  trControl = control_8
+)
+
+modelo_boot_8$results
+summary(modelo_boot_8$finalModel)$adj.r.squared
+```
+
+`$results` entrega RMSE, R² y MAE de remuestreo. El R² ajustado de `$finalModel` describe el ajuste sobre las 100 observaciones y normalmente es más optimista.
+
+## Confiabilidad
+
+```{r p8-diagnostico}
+residualPlots(modelo_8)
+marginalModelPlots(modelo_8, sd = TRUE)
+ncvTest(modelo_8)
+
+set.seed(31415)
+durbinWatsonTest(modelo_8)
+
+vif(modelo_8)
+outlierTest(modelo_8)
+influencePlot(modelo_8)
+```
+
+> La confiabilidad se apoya en los diagnósticos. El poder predictivo se apoya principalmente en RMSE, R² y MAE bootstrap, no únicamente en el R² ajustado del modelo final.
+
+**Resultado con esta semilla:** el menor BIC corresponde a `hab_dig + hab_num`. El bootstrap entrega RMSE = 29,6225, R² = 0,9724 y MAE = 19,2812; el R² ajustado del modelo final es 0,9736. No se detectan curvatura, heterocedasticidad al 5% ni autocorrelación, y los VIF son 1,22. Existen observaciones atípicas que deben revisarse, pero las métricas de ajuste y remuestreo son muy parecidas.
+
+\newpage
+
+# Pregunta 9. Regresión lineal jerárquica
+
+## Qué hay que reconocer
+
+`sexo`, `tipo_edu` y `egreso` son controles y deben permanecer en todos los modelos. Los predictores de interés entran por bloques.
+
+## Muestra y modelos
+
+```{r p9-modelos}
+set.seed(9876)
+muestra_9 <- datos[sample(nrow(datos), 180), ]
+
+entrenamiento_9 <- muestra_9[1:140, ]
+prueba_9 <- muestra_9[141:180, ]
+
+m1_9 <- lm(
+  hab_dig ~ sexo + tipo_edu + egreso,
+  data = entrenamiento_9
+)
+
+m2_9 <- lm(
+  hab_dig ~ sexo + tipo_edu + egreso + hab_num,
+  data = entrenamiento_9
+)
+
+m3_9 <- lm(
+  hab_dig ~ sexo + tipo_edu + egreso +
+    hab_num + hab_verb + hab_ciud,
+  data = entrenamiento_9
+)
+
+anova(m1_9, m2_9, m3_9)
+```
+
+La fila de `m2_9` evalúa el aporte de `hab_num` sobre los controles. La fila de `m3_9` evalúa el aporte conjunto de `hab_verb` y `hab_ciud` después de mantener controles y `hab_num`.
+
+## Medidas de ajuste
+
+```{r p9-ajuste}
+data.frame(
+  Modelo = c("M1", "M2", "M3"),
+  R2 = c(
+    summary(m1_9)$r.squared,
+    summary(m2_9)$r.squared,
+    summary(m3_9)$r.squared
+  ),
+  R2_ajustado = c(
+    summary(m1_9)$adj.r.squared,
+    summary(m2_9)$adj.r.squared,
+    summary(m3_9)$adj.r.squared
+  ),
+  AIC = c(AIC(m1_9), AIC(m2_9), AIC(m3_9)),
+  BIC = c(BIC(m1_9), BIC(m2_9), BIC(m3_9))
+)
+```
+
+## Condiciones del modelo final
+
+```{r p9-diagnostico}
+residualPlots(m3_9)
+marginalModelPlots(m3_9, sd = TRUE)
+ncvTest(m3_9)
+
+set.seed(9876)
+durbinWatsonTest(m3_9)
+
+vif(m3_9)
+outlierTest(m3_9)
+influencePlot(m3_9)
+```
+
+## Poder predictivo
+
+```{r p9-prediccion}
+pred_9 <- predict(m3_9, newdata = prueba_9)
+error_9 <- prueba_9$hab_dig - pred_9
+
+sqrt(mean(error_9^2))
+mean(abs(error_9))
+```
+
+Cómo concluir:
+
+> Si la comparación `m1_9`–`m2_9` resulta significativa, `hab_num` aporta después de controlar por `sexo`, `tipo_edu` y `egreso`. Si la comparación `m2_9`–`m3_9` resulta significativa, `hab_verb` y `hab_ciud` aportan información adicional en conjunto. La confiabilidad depende de los diagnósticos y el poder predictivo del RMSE/MAE en los 40 casos reservados.
+
+**Resultado con esta semilla:** ambos bloques mejoran significativamente el modelo (p < 0,001). Por lo tanto, `hab_num` aporta sobre los controles y el bloque `hab_verb + hab_ciud` agrega información adicional. El modelo final alcanza R² ajustado = 0,9886, pero las pruebas muestran curvatura y heterocedasticidad; no se detecta autocorrelación y los VIF son menores que 3. En prueba se obtiene RMSE = 32,8026 y MAE = 20,2466.
+
+\newpage
+
+# Pregunta 10. Regresión logística clásica estilo EP10
+
+## Qué hay que reconocer
+
+Se construye un modelo logístico simple, luego uno múltiple con selección escalonada y finalmente se evalúa en 100 personas que no participaron en el ajuste.
+
+## Muestra balanceada
+
+```{r p10-datos}
+set.seed(45678)
+
+empleo_0_10 <- datos |>
+  filter(empleo_fl == 0) |>
+  slice_sample(n = 150)
+
+empleo_1_10 <- datos |>
+  filter(empleo_fl == 1) |>
+  slice_sample(n = 150)
+
+entrenamiento_10 <- rbind(
+  empleo_0_10[1:100, ],
+  empleo_1_10[1:100, ]
+)
+
+prueba_10 <- rbind(
+  empleo_0_10[101:150, ],
+  empleo_1_10[101:150, ]
+)
+
+entrenamiento_10 <- entrenamiento_10[
+  sample(nrow(entrenamiento_10)),
+]
+
+prueba_10 <- prueba_10[sample(nrow(prueba_10)), ]
+
+table(entrenamiento_10$empleo_fl)
+table(prueba_10$empleo_fl)
+```
+
+## Modelo simple y selección de variables adicionales
+
+```{r p10-modelos}
+modelo_simple_10 <- glm(
+  empleo_fl ~ hab_dig,
+  data = entrenamiento_10,
+  family = binomial
+)
+
+modelo_completo_10 <- glm(
+  empleo_fl ~ hab_dig + hab_ciud + hab_num +
+    hab_verb + egreso + sexo + tipo_edu,
+  data = entrenamiento_10,
+  family = binomial
+)
+
+modelo_final_10 <- step(
+  modelo_simple_10,
+  scope = list(
+    lower = modelo_simple_10,
+    upper = modelo_completo_10
+  ),
+  direction = "forward"
+)
+
+summary(modelo_simple_10)
+summary(modelo_final_10)
+```
+
+Este es el patrón de EP10: se parte con el predictor obligatorio y `step()` agrega variables según AIC. Hay que comprobar en el output cuántas variables adicionales quedaron seleccionadas.
+
+## Deviance, LRT y AIC
+
+```{r p10-ajuste}
+anova(
+  modelo_simple_10,
+  modelo_final_10,
+  test = "LRT"
+)
+
+AIC(modelo_simple_10, modelo_final_10)
+
+data.frame(
+  Modelo = c("Simple", "Múltiple"),
+  Deviance_residual = c(
+    deviance(modelo_simple_10),
+    deviance(modelo_final_10)
+  )
+)
+```
+
+Cómo redactar:
+
+> Si el LRT entrega p < 0,05, agregar los predictores mejora significativamente el modelo simple. Menor deviance residual indica menor falta de ajuste y menor AIC indica mejor equilibrio entre ajuste y complejidad.
+
+## Coeficientes y odds
+
+```{r p10-coeficientes}
+summary(modelo_final_10)$coefficients
+exp(coef(modelo_final_10))
+```
+
+- Coeficiente positivo: aumenta la probabilidad de `empleo_fl = 1`, manteniendo constantes los demás predictores.
+- Coeficiente negativo: la disminuye.
+- Una razón de odds mayor que 1 multiplica las odds hacia arriba; una menor que 1 las multiplica hacia abajo.
+- Solo se redactan como aportes relevantes los predictores con p < 0,05.
+
+## Convergencia, multicolinealidad e influencia
+
+```{r p10-diagnostico}
+modelo_final_10$converged
+vif(modelo_final_10)
+influencePlot(modelo_final_10)
+```
+
+> `TRUE` confirma convergencia. Los VIF se interpretan con los rangos del capítulo 14. Los casos etiquetados se revisan, pero no se eliminan automáticamente.
+
+## Evaluación en prueba
+
+```{r p10-prediccion}
+prob_10 <- predict(
+  modelo_final_10,
+  newdata = prueba_10,
+  type = "response"
+)
+
+pred_10 <- factor(
+  ifelse(prob_10 >= 0.5, "Empleo", "No_empleo"),
+  levels = c("Empleo", "No_empleo")
+)
+
+real_10 <- factor(
+  ifelse(prueba_10$empleo_fl == 1, "Empleo", "No_empleo"),
+  levels = c("Empleo", "No_empleo")
+)
+
+matriz_10 <- confusionMatrix(
+  pred_10,
+  real_10,
+  positive = "Empleo"
+)
+
+matriz_10
+
+curva_10 <- roc(
+  prueba_10$empleo_fl,
+  prob_10,
+  levels = c(0, 1),
+  direction = "<"
+)
+
+curva_10
+auc(curva_10)
+plot(curva_10)
+```
+
+## Conclusión en tres partes
+
+**Ajuste:** LRT, deviance y AIC.
+
+**Confiabilidad:** convergencia, VIF y observaciones influyentes.
+
+**Poder predictivo:** accuracy, sensibilidad, especificidad y AUC sobre los 100 casos reservados.
+
+> “En prueba, el modelo obtuvo accuracy = ..., sensibilidad = ..., especificidad = ... y AUC = .... Estas métricas corresponden a personas no usadas para construir el modelo”.
+
+**Resultado con esta semilla:** `step()` agrega `hab_verb` y `tipo_edu` al predictor obligatorio `hab_dig`. Los tres predictores resultan significativos. El LRT confirma una mejora respecto del modelo simple (p < 0,001), la deviance baja de 236,14 a 193,43 y el AIC de 240,14 a 201,43. El modelo converge, los VIF son cercanos a 1 y no aparecen distancias de Cook grandes. En prueba obtiene accuracy = 0,82, sensibilidad = 0,80, especificidad = 0,84 y AUC = 0,8874, mostrando buena discriminación.
+
+\newpage
+
+# Pregunta 11. Elección del umbral
+
+## Qué hay que reconocer
+
+Las probabilidades son las mismas que en la Pregunta 10. Cambiar el umbral solo cambia la decisión de clase y, por lo tanto, la matriz de confusión. El AUC no cambia porque resume todos los umbrales posibles.
+
+```{r p11-umbrales}
+umbrales_11 <- c(0.30, 0.50, 0.70)
+
+resultados_11 <- data.frame(
+  Umbral = umbrales_11,
+  Sensibilidad = NA,
+  Especificidad = NA,
+  Accuracy = NA,
+  Falsos_positivos = NA,
+  Falsos_negativos = NA,
+  Costo = NA
+)
+
+for (i in 1:length(umbrales_11)) {
+  pred_i <- factor(
+    ifelse(
+      prob_10 >= umbrales_11[i],
+      "Empleo",
+      "No_empleo"
+    ),
+    levels = c("Empleo", "No_empleo")
+  )
+
+  mc_i <- confusionMatrix(
+    pred_i,
+    real_10,
+    positive = "Empleo"
+  )
+
+  tabla_i <- mc_i$table
+
+  FP_i <- tabla_i["Empleo", "No_empleo"]
+  FN_i <- tabla_i["No_empleo", "Empleo"]
+
+  resultados_11$Sensibilidad[i] <- mc_i$byClass["Sensitivity"]
+  resultados_11$Especificidad[i] <- mc_i$byClass["Specificity"]
+  resultados_11$Accuracy[i] <- mc_i$overall["Accuracy"]
+  resultados_11$Falsos_positivos[i] <- FP_i
+  resultados_11$Falsos_negativos[i] <- FN_i
+  resultados_11$Costo[i] <- FP_i + 4 * FN_i
+}
+
+resultados_11
+
+resultados_11[
+  which.min(resultados_11$Costo),
+]
+```
+
+Cómo decidir:
+
+> Se recomienda el umbral con menor `Costo`, porque cada falso negativo cuesta cuatro veces lo que cuesta un falso positivo. En este contexto suele favorecerse un umbral más bajo, ya que aumenta la sensibilidad y reduce falsos negativos, aunque puede disminuir la especificidad.
+
+El umbral 0,5 es habitual, pero no tiene un privilegio estadístico: la decisión depende del costo de cada error. El AUC no cambia porque se calcula a partir del orden de las probabilidades y considera el recorrido por todos los umbrales, no una sola clasificación.
+
+**Resultado con esta semilla:** los costos son 29 para el umbral 0,30; 48 para 0,50; y 111 para 0,70. Se recomienda 0,30 porque deja solo 2 falsos negativos y obtiene sensibilidad = 0,96. El costo es una especificidad menor, 0,58, y 21 falsos positivos.
+
+\newpage
+
+# Pregunta 12. RFE para regresión lineal
+
+## Qué hay que reconocer
+
+La respuesta es numérica. Se usa `lmFuncs`, `metric = "Rsquared"` y validación cruzada de 5 pliegues repetida 5 veces, como en EP11.
+
+## Muestra y RFE
+
+```{r p12-rfe}
+set.seed(21336)
+muestra_12 <- datos[sample(nrow(datos), 150), ]
+
+predictoras_12 <- c(
+  "empleo_fl", "sexo", "tipo_edu", "egreso",
+  "hab_ciud", "hab_num", "hab_verb"
+)
+
+x_12 <- muestra_12[, predictoras_12]
+y_12 <- muestra_12$hab_dig
+
+funciones_12 <- lmFuncs
+
+funciones_12$selectSize <- function(x, metric, maximize) {
+  x <- x[x$Variables %in% 3:6, , drop = FALSE]
+  pickSizeBest(x, metric, maximize)
+}
+
+control_12 <- rfeControl(
+  functions = funciones_12,
+  method = "repeatedcv",
+  number = 5,
+  repeats = 5,
+  returnResamp = "final"
+)
+
+set.seed(21336)
+
+rfe_12 <- rfe(
+  x = x_12,
+  y = y_12,
+  sizes = 3:6,
+  rfeControl = control_12,
+  metric = "Rsquared"
+)
+
+rfe_12$optsize
+predictors(rfe_12)
+rfe_12$results
+```
+
+La fila elegida entrega RMSE, R² y MAE promedio de validación. Esas cifras se usan para poder predictivo.
+
+## Modelo final y diagnóstico
+
+```{r p12-modelo}
+predictores_12 <- predictors(rfe_12)
+
+formula_12 <- reformulate(
+  predictores_12,
+  response = "hab_dig"
+)
+
+modelo_12 <- lm(
+  formula_12,
+  data = muestra_12
+)
+
+summary(modelo_12)
+
+residualPlots(modelo_12)
+marginalModelPlots(modelo_12, sd = TRUE)
+ncvTest(modelo_12)
+
+set.seed(21336)
+durbinWatsonTest(modelo_12)
+
+vif(modelo_12)
+outlierTest(modelo_12)
+influencePlot(modelo_12)
+```
+
+## Ajuste final versus remuestreo
+
+```{r p12-comparacion}
+resultado_12 <- rfe_12$results[
+  rfe_12$results$Variables == rfe_12$optsize,
+]
+
+resultado_12
+summary(modelo_12)$adj.r.squared
+```
+
+> El R² ajustado del modelo final describe las mismas 150 observaciones usadas para ajustarlo. El R² de `resultado_12` proviene de validación cruzada y es más apropiado para hablar de poder predictivo. La generalidad también depende de que los diagnósticos no muestren problemas graves.
+
+**Resultado con esta semilla:** RFE selecciona 6 predictores: `tipo_edu`, `empleo_fl`, `egreso`, `sexo`, `hab_ciud` y `hab_verb`. La validación entrega RMSE = 17,9254, R² = 0,9876 y MAE = 12,1521; el R² ajustado final es 0,9879. Los VIF son menores que 1,32, pero las pruebas de curvatura para `hab_ciud`, `hab_verb` y Tukey son significativas, por lo que la alta capacidad predictiva debe informarse junto con esa limitación de confiabilidad.
+
+\newpage
+
+# Pregunta 13. RFE logística con LOOCV y ROC
+
+## Qué hay que reconocer
+
+Con LOOCV cada fold contiene una sola persona y no permite calcular una ROC útil dentro de cada fold. Se sigue exactamente el enfoque de EP11: RFE genera los subconjuntos candidatos, luego se reúnen las 100 probabilidades dejadas fuera y se calcula una ROC global para cada tamaño.
+
+## Muestra balanceada y clase positiva
+
+```{r p13-datos}
+set.seed(21336)
+
+empleo_0_13 <- datos |>
+  filter(empleo_fl == 0) |>
+  slice_sample(n = 50)
+
+empleo_1_13 <- datos |>
+  filter(empleo_fl == 1) |>
+  slice_sample(n = 50)
+
+muestra_13 <- rbind(empleo_0_13, empleo_1_13)
+muestra_13 <- muestra_13[sample(nrow(muestra_13)), ]
+
+predictoras_13 <- c(
+  "sexo", "tipo_edu", "egreso", "hab_dig",
+  "hab_ciud", "hab_num", "hab_verb"
+)
+
+x_13 <- muestra_13[, predictoras_13]
+
+y_13 <- factor(
+  ifelse(muestra_13$empleo_fl == 1, "Empleo", "No_empleo"),
+  levels = c("Empleo", "No_empleo")
+)
+
+table(y_13)
+```
+
+`Empleo` es el primer nivel y se define como clase positiva. Se omite `region` en esta adaptación porque el patrón matricial de EP11 trabaja con predictores numéricos; incluirla exigiría convertir sus 16 niveles en variables indicadoras.
+
+## RFE con LOOCV para generar candidatos
+
+```{r p13-rfe}
+set.seed(21336)
+
+control_13 <- rfeControl(
+  functions = lrFuncs,
+  method = "LOOCV",
+  returnResamp = "all"
+)
+
+rfe_13 <- rfe(
+  x = x_13,
+  y = y_13,
+  sizes = 2:6,
+  rfeControl = control_13,
+  metric = "Accuracy"
+)
+
+variables_13 <- lapply(2:6, function(k) {
+  importancia_k <- rfe_13$variables[
+    rfe_13$variables$Variables == k,
+  ]
+
+  promedio_k <- aggregate(
+    Overall ~ var,
+    data = importancia_k,
+    FUN = mean
+  )
+
+  promedio_k <- promedio_k[
+    order(promedio_k$Overall, decreasing = TRUE),
+  ]
+
+  head(promedio_k$var, k)
+})
+
+names(variables_13) <- 2:6
+variables_13
+```
+
+Aquí `Accuracy` solo permite que RFE produzca y ordene los subconjuntos. La selección final se hará por AUC global.
+
+## LOOCV explícito y ROC global
+
+```{r p13-loocv}
+resultados_13 <- data.frame(
+  Variables = 2:6,
+  ROC = NA,
+  Sens = NA,
+  Spec = NA
+)
+
+for (k in 2:6) {
+  predictores_k <- variables_13[[as.character(k)]]
+  probabilidades <- numeric(nrow(muestra_13))
+
+  for (i in 1:nrow(muestra_13)) {
+    entrenamiento_i <- muestra_13[-i, ]
+    prueba_i <- muestra_13[i, , drop = FALSE]
+
+    formula_k <- as.formula(
+      paste(
+        "empleo_fl ~",
+        paste(predictores_k, collapse = " + ")
+      )
+    )
+
+    modelo_k <- glm(
+      formula_k,
+      data = entrenamiento_i,
+      family = binomial
+    )
+
+    probabilidades[i] <- predict(
+      modelo_k,
+      newdata = prueba_i,
+      type = "response"
+    )
+  }
+
+  curva_k <- roc(
+    muestra_13$empleo_fl,
+    probabilidades,
+    levels = c(0, 1),
+    direction = "<",
+    quiet = TRUE
+  )
+
+  corte_k <- coords(
+    curva_k,
+    x = "best",
+    ret = c("sensitivity", "specificity"),
+    transpose = FALSE
+  )
+
+  resultados_13$ROC[resultados_13$Variables == k] <-
+    as.numeric(auc(curva_k))
+
+  resultados_13$Sens[resultados_13$Variables == k] <-
+    as.numeric(corte_k$sensitivity[1])
+
+  resultados_13$Spec[resultados_13$Variables == k] <-
+    as.numeric(corte_k$specificity[1])
+}
+
+mejor_n_13 <- resultados_13$Variables[
+  which.max(resultados_13$ROC)
+]
+
+predictores_13 <- variables_13[[
+  as.character(mejor_n_13)
+]]
+
+resultados_13
+mejor_n_13
+predictores_13
+```
+
+## Modelo final, ajuste y confiabilidad
+
+```{r p13-final}
+formula_13 <- as.formula(
+  paste(
+    "empleo_fl ~",
+    paste(predictores_13, collapse = " + ")
+  )
+)
+
+modelo_13 <- glm(
+  formula_13,
+  data = muestra_13,
+  family = binomial
+)
+
+modelo_nulo_13 <- glm(
+  empleo_fl ~ 1,
+  data = muestra_13,
+  family = binomial
+)
+
+summary(modelo_13)
+anova(modelo_nulo_13, modelo_13, test = "LRT")
+AIC(modelo_nulo_13, modelo_13)
+
+modelo_13$converged
+vif(modelo_13)
+influencePlot(modelo_13)
+```
+
+## Cómo concluir
+
+**Confiabilidad:**
+
+> “El modelo [mejora/no mejora] significativamente respecto del nulo según el LRT, presenta [menor/no menor] AIC, convergió [correctamente/con problemas] y sus VIF [no muestran/muestran] multicolinealidad importante. Los casos etiquetados por influencia deben revisarse”.
+
+**Poder predictivo:**
+
+> “El tamaño seleccionado obtuvo la mayor AUC global de LOOCV: ROC = ..., sensibilidad = ... y especificidad = .... Estas métricas son más útiles que una ROC calculada sobre el ajuste final, porque cada probabilidad fue obtenida por un modelo que dejó fuera a esa persona”.
+
+**Resultado con esta semilla:** el mayor AUC corresponde a 3 predictores: `hab_verb`, `hab_dig` y `tipo_edu`. La evaluación LOOCV entrega ROC = 0,7796, sensibilidad = 0,88 y especificidad = 0,56. El modelo mejora significativamente respecto del nulo (p < 0,001), reduce el AIC de 140,63 a 115,47, converge y presenta VIF menores que 1,17. El ajuste es confiable en esos aspectos; el poder predictivo es moderado y favorece la sensibilidad por sobre la especificidad.
+
+\newpage
+
+# Guía final para redactar cualquier variante
+
+1. **Primero identifica la familia:** remuestreo, lineal o logística.
+2. **Escribe qué se seleccionó:** muestra, respuesta, predictores, semilla y método de validación.
+3. **Ajuste:** p-valores, R²/R² ajustado, deviance, LRT, AIC o BIC.
+4. **Confiabilidad:** condiciones, VIF, convergencia y casos influyentes.
+5. **Poder predictivo:** usa prueba, bootstrap, CV o LOOCV; no el mismo ajuste.
+6. **Concluye en contexto:** nombra las variables y evita decir “demuestra”.
+
+Frases cortas útiles:
+
+- “Como p < 0,05, existe evidencia de que el predictor aporta al modelo”.
+- “Como el IC contiene 0, no hay evidencia suficiente de diferencia”.
+- “El modelo con menor AIC/BIC presenta mejor equilibrio entre ajuste y complejidad”.
+- “Como `ncvTest()` entrega p > 0,05, no hay evidencia de varianza no constante”.
+- “Los VIF se mantienen bajo 5, por lo que no se observa multicolinealidad importante”.
+- “El RMSE de prueba fue ..., por lo que las predicciones se desvían aproximadamente ... unidades”.
+- “El AUC de validación fue ..., mostrando una capacidad de discriminación ...”.
