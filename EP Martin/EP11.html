@@ -5345,6 +5345,15 @@ bootstrap cercano a 0,973 y un RMSE cercano a 2,16. Estos resultados
 sugieren una buena capacidad predictiva para Weight en esta muestra. De
 todas formas, esta conclusión debe mantenerse junto con los resultados
 de los diagnósticos anteriores y no solamente con el R².</p>
+<p>En el modelo de Weight no se encuentra evidencia de
+heterocedasticidad según ncvTest (p = 0.603), ni de autocorrelación
+según Durbin-Watson (p = 0.796). Sin embargo, las pruebas de curvatura
+muestran resultados significativos para algunos predictores y para la
+prueba de Tukey, por lo que la condición de linealidad no se cumple
+completamente. El VIF máximo es cercano a 5.23, indicando cierta
+multicolinealidad que conviene considerar. A pesar de estas
+limitaciones, el desempeño obtenido mediante bootstrap es alto, con un
+R² de 0.974 y RMSE de 2.168.</p>
 </div>
 <div id="modelo-para-predecir-imc" class="section level2">
 <h2>6.2. Modelo para predecir IMC</h2>
@@ -5498,6 +5507,14 @@ precaución que el modelo de Weight.</p>
 el modelo solamente sobre los mismos datos con que fue construido, pero
 no elimina el problema de tener una cantidad alta de predictores para
 una muestra de solamente 100 personas.</p>
+<p>Para el modelo de IMC aparecen más dificultades. Se observan pruebas
+de curvatura significativas, además ncvTest resulta significativo (p
+&lt; 0.001), por lo que existe evidencia de heterocedasticidad. También
+aparecen valores VIF superiores a 10 en varios predictores, indicando
+problemas de multicolinealidad. Durbin-Watson, en cambio, no entrega
+evidencia de autocorrelación (p = 0.624). Por esto, aunque la validación
+cruzada muestra una capacidad predictiva relativamente buena, con R² =
+0.808, el modelo debe utilizarse con mayor precaución.</p>
 </div>
 <div id="modelo-logístico-para-predecir-en" class="section level2">
 <h2>6.3. Modelo logístico para predecir EN</h2>
